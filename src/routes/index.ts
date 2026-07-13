@@ -1,0 +1,36 @@
+import { Router } from 'express';
+
+import { authRoutes } from '../modules/auth/auth.routes.js';
+import { userRoutes } from '../modules/users/users.routes.js';
+import { roleRoutes } from '../modules/roles/roles.routes.js';
+import { contratoRoutes } from '../modules/contratos/contratos.routes.js';
+import { nominaRoutes } from '../modules/nomina/nomina.routes.js';
+import { vacacionesRoutes } from '../modules/vacaciones/vacaciones.routes.js';
+import { asistenciaRoutes } from '../modules/asistencia/asistencia.routes.js';
+import { permisosRoutes } from '../modules/permisos/permisos.routes.js';
+import { documentosRoutes } from '../modules/documentos/documentos.routes.js';
+import { notificacionesRoutes } from '../modules/notificaciones/notificaciones.routes.js';
+import { etlRoutes } from '../modules/etl/etl.routes.js';
+import { actividadRoutes } from '../modules/actividad/actividad.routes.js';
+import { soporteRoutes } from '../modules/soporte/soporte.routes.js';
+import contactoRoutes from '../modules/contacto/contacto.routes.js';
+import { mlRoutes } from '../modules/ml/ml.routes.js';
+export const router = Router();
+import wearableRoutes from '../modules/wearables/wearables.routes.js';
+
+router.use('/auth', authRoutes);
+router.use('/roles', roleRoutes);
+router.use('/users', userRoutes);
+router.use('/contratos', contratoRoutes);
+router.use('/nominas', nominaRoutes);
+router.use('/vacaciones', vacacionesRoutes);
+router.use('/asistencia', asistenciaRoutes);
+router.use('/permisos', permisosRoutes);
+router.use('/documentos', documentosRoutes);
+router.use('/notificaciones', notificacionesRoutes);
+router.use('/actividad', actividadRoutes);
+router.use('/soporte', soporteRoutes);
+router.use('/etl', etlRoutes);
+router.use('/contacto', contactoRoutes);
+router.use('/ml', mlRoutes);
+router.use('/wearables', wearableRoutes);

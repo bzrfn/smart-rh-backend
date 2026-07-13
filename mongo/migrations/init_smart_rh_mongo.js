@@ -1,0 +1,10 @@
+use RRHH;
+db.createCollection('auditoria');
+db.createCollection('qr_logs');
+db.createCollection('documentos_generados');
+db.createCollection('notificaciones');
+db.createCollection('eventos_sistema');
+db.createCollection('historial_accesos');
+db.auditoria.createIndex({ usuario_id: 1, createdAt: -1 });
+db.documentos_generados.createIndex({ usuario_id: 1, tipo: 1, createdAt: -1 });
+db.qr_logs.createIndex({ usuario_id: 1, createdAt: -1 });
