@@ -17,6 +17,7 @@ import contactoRoutes from '../modules/contacto/contacto.routes.js';
 import { mlRoutes } from '../modules/ml/ml.routes.js';
 export const router = Router();
 import wearableRoutes from '../modules/wearables/wearables.routes.js';
+import { kmeansRoutes } from '../modules/kmeans/kmeans.routes.js';
 
 router.use('/auth', authRoutes);
 router.use('/roles', roleRoutes);
@@ -34,3 +35,4 @@ router.use('/etl', etlRoutes);
 router.use('/contacto', contactoRoutes);
 router.use('/ml', mlRoutes);
 router.use('/wearables', wearableRoutes);
+router.use('/kmeans', kmeansRoutes);
