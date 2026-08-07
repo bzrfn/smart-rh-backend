@@ -63,7 +63,7 @@ function inclusiveDateDiffInDays(start?: any, end?: any) {
 
   return days + 1;
 }
-
+    
 // Busca el primer valor numérico entre varias posibles columnas del registro.
 // Sirve para soportar nombres de campos distintos en la base de datos.
 function getFirstNumber(row: Row, keys: string[]) {

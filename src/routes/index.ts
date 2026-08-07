@@ -18,6 +18,8 @@ import { mlRoutes } from '../modules/ml/ml.routes.js';
 export const router = Router();
 import wearableRoutes from '../modules/wearables/wearables.routes.js';
 import { kmeansRoutes } from '../modules/kmeans/kmeans.routes.js';
+import analyticsRoutes from '../modules/analytics/analytics.routes.js';
+
 
 router.use('/auth', authRoutes);
 router.use('/roles', roleRoutes);
@@ -36,3 +38,4 @@ router.use('/contacto', contactoRoutes);
 router.use('/ml', mlRoutes);
 router.use('/wearables', wearableRoutes);
 router.use('/kmeans', kmeansRoutes);
+router.use('/analytics', analyticsRoutes);
