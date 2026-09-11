@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { enviarCorreoContactoService } from './contacto.service';
+import { enviarCorreoContactoService } from './contacto.service.js';
 
 export async function enviarCorreoContactoController(req: Request, res: Response) {
   try {
