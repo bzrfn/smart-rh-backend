@@ -1,5 +1,12 @@
 import 'dotenv/config';
 
+type StorageDriver = 'local' | 's3';
+
+const storageDriver: StorageDriver =
+  String(process.env.STORAGE_DRIVER || 'local').toLowerCase() === 's3'
+    ? 's3'
+    : 'local';
+
 export const env = {
   // ==========================================================
   // SERVIDOR
@@ -14,7 +21,7 @@ export const env = {
   // MariaDB -> 127.0.0.1:3307
   //
   // AWS:
-  // RDS MariaDB -> puerto 3306 mediante variables de entorno
+  // RDS MariaDB -> puerto 3306
   // ==========================================================
 
   db: {
@@ -61,14 +68,28 @@ export const env = {
   },
 
   // ==========================================================
+  // STORAGE
+  //
+  // local:
+  //   uploads/
+  //
+  // s3:
+  //   bucket privado de documentos SMART RH
+  // ==========================================================
+
+  storage: {
+    driver: storageDriver,
+
+    region:
+      process.env.AWS_REGION ||
+      process.env.AWS_DEFAULT_REGION ||
+      'us-east-1',
+
+    bucket: process.env.S3_DOCUMENTS_BUCKET || '',
+  },
+
+  // ==========================================================
   // CORS
-  //
-  // Permite uno o varios orígenes separados por coma.
-  //
-  // Ejemplo:
-  // CORS_ORIGIN=http://localhost:5173,https://portal.smarth.com
-  //
-  // Si está vacío, se mantiene abierto para desarrollo.
   // ==========================================================
 
   cors: {

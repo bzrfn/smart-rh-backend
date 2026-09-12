@@ -2,23 +2,25 @@ import express from 'express';
 import cors from 'cors';
 
 import { env } from './config/env.js';
-import { router as mainRouter } from './routes/index.js';
-import { etlRoutes } from './modules/etl/etl.routes.js';
-
-import { notFound } from './middlewares/notFound.js';
-import { errorHandler } from './middlewares/errorHandler.js';
 
 import {
   ensureUploadStructure,
+  getStorageDriver,
+  readStorageObject,
   uploadRoot,
 } from './config/storage.js';
+
+import { router as mainRouter } from './routes/index.js';
+
+import { notFound } from './middlewares/notFound.js';
+import { errorHandler } from './middlewares/errorHandler.js';
 
 
 export const app = express();
 
 
 // ============================================================
-// ESTRUCTURA DE UPLOADS
+// ESTRUCTURA DE STORAGE
 // ============================================================
 
 ensureUploadStructure();
@@ -26,17 +28,6 @@ ensureUploadStructure();
 
 // ============================================================
 // CORS
-//
-// CORS_ORIGIN puede contener uno o varios orígenes:
-//
-// CORS_ORIGIN=http://localhost:5173,https://portal.ejemplo.com
-//
-// Si está vacío, se permite cualquier origen.
-// Esto mantiene compatibilidad con desarrollo local.
-//
-// Las solicitudes sin encabezado Origin también se permiten,
-// lo cual es importante para la app móvil y comunicaciones
-// servidor-servidor.
 // ============================================================
 
 const allowedOrigins = env.cors.origin
@@ -44,30 +35,30 @@ const allowedOrigins = env.cors.origin
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+
 app.use(
   cors({
     origin(origin, callback) {
-      // Apps móviles, Postman y llamadas servidor-servidor
-      // pueden no enviar Origin.
+      // Apps móviles, Postman y servicios
+      // servidor-servidor pueden no enviar Origin.
       if (!origin) {
         return callback(null, true);
       }
 
-      // Desarrollo local:
-      // si no se configuró CORS_ORIGIN, se permite cualquier
-      // origen.
+      // Desarrollo local.
       if (allowedOrigins.length === 0) {
         return callback(null, true);
       }
 
-      // Producción:
-      // únicamente orígenes autorizados.
+      // Producción.
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
       return callback(
-        new Error(`Origen no permitido por CORS: ${origin}`)
+        new Error(
+          `Origen no permitido por CORS: ${origin}`
+        )
       );
     },
 
@@ -89,7 +80,7 @@ app.use(
 
 
 // ============================================================
-// JSON
+// BODY
 // ============================================================
 
 app.use(
@@ -98,13 +89,6 @@ app.use(
   })
 );
 
-
-// ============================================================
-// FORMULARIOS
-//
-// Se conserva porque el backend anterior soportaba también
-// express.urlencoded.
-// ============================================================
 
 app.use(
   express.urlencoded({
@@ -115,44 +99,104 @@ app.use(
 
 
 // ============================================================
-// ARCHIVOS ESTÁTICOS
+// ARCHIVOS
+//
+// LOCAL:
+//
+// /uploads -> express.static
+//
+// AWS:
+//
+// /uploads -> Backend -> S3 privado
+//
+// De esta forma web y móvil pueden conservar las rutas
+// existentes aunque el archivo ya no viva en EC2.
 // ============================================================
 
-app.use(
-  '/uploads',
-  express.static(uploadRoot)
-);
+if (getStorageDriver() === 'local') {
+
+  app.use(
+    '/uploads',
+    express.static(uploadRoot)
+  );
+
+} else {
+
+  app.get(
+    '/uploads/*',
+    async (req, res, next) => {
+      try {
+        const params =
+          req.params as Record<
+            string,
+            string
+          >;
+
+        const key = params['0'];
+
+        if (!key) {
+          return res.status(404).json({
+            ok: false,
+            message:
+              'Archivo no encontrado',
+          });
+        }
+
+        const object =
+          await readStorageObject(key);
+
+        if (!object) {
+          return res.status(404).json({
+            ok: false,
+            message:
+              'Archivo no encontrado',
+          });
+        }
+
+        res.setHeader(
+          'Content-Type',
+          object.contentType
+        );
+
+        res.setHeader(
+          'Content-Length',
+          String(object.body.length)
+        );
+
+        // Evitamos que CloudFront almacene
+        // documentos laborales indefinidamente.
+        res.setHeader(
+          'Cache-Control',
+          'private, no-store'
+        );
+
+        return res.send(object.body);
+
+      } catch (error) {
+        return next(error);
+      }
+    }
+  );
+}
 
 
 // ============================================================
 // HEALTH CHECK
-//
-// Será utilizado posteriormente por AWS/Nginx para comprobar
-// que el backend se encuentra activo.
 // ============================================================
 
 app.get('/health', (_req, res) => {
   res.status(200).json({
     ok: true,
     service: 'SMART RH Backend',
+    storage: getStorageDriver(),
   });
 });
 
 
 // ============================================================
-// ETL
-//
-// Se conserva exactamente la ruta que utilizaba server.ts.
-// ============================================================
-
-app.use(
-  '/etl',
-  etlRoutes
-);
-
-
-// ============================================================
 // RUTAS PRINCIPALES
+//
+// /etl ya forma parte de mainRouter.
 // ============================================================
 
 app.use(
@@ -162,14 +206,14 @@ app.use(
 
 
 // ============================================================
-// RUTA NO ENCONTRADA
+// 404
 // ============================================================
 
 app.use(notFound);
 
 
 // ============================================================
-// MANEJO GLOBAL DE ERRORES
+// ERROR HANDLER
 // ============================================================
 
 app.use(errorHandler);
