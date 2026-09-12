@@ -1,4 +1,9 @@
-import express from 'express';
+import express, {
+  NextFunction,
+  Request,
+  Response,
+} from 'express';
+
 import cors from 'cors';
 
 import { env } from './config/env.js';
@@ -6,17 +11,40 @@ import { env } from './config/env.js';
 import {
   ensureUploadStructure,
   getStorageDriver,
+  normalizeStorageKey,
   readStorageObject,
-  uploadRoot,
 } from './config/storage.js';
 
-import { router as mainRouter } from './routes/index.js';
+import {
+  authJwt,
+} from './middlewares/authJwt.js';
 
-import { notFound } from './middlewares/notFound.js';
-import { errorHandler } from './middlewares/errorHandler.js';
+import {
+  authorizeUploadAccess,
+} from './middlewares/authorizeUploadAccess.js';
+
+import {
+  router as mainRouter,
+} from './routes/index.js';
+
+import {
+  notFound,
+} from './middlewares/notFound.js';
+
+import {
+  errorHandler,
+} from './middlewares/errorHandler.js';
 
 
 export const app = express();
+
+
+// ============================================================
+// HARDENING HTTP
+// ============================================================
+
+// Evita exponer innecesariamente que el backend utiliza Express.
+app.disable('x-powered-by');
 
 
 // ============================================================
@@ -30,29 +58,51 @@ ensureUploadStructure();
 // CORS
 // ============================================================
 
-const allowedOrigins = env.cors.origin
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const allowedOrigins =
+  env.cors.origin
+    .split(',')
+    .map(
+      (origin) =>
+        origin.trim()
+    )
+    .filter(Boolean);
 
 
 app.use(
   cors({
-    origin(origin, callback) {
-      // Apps móviles, Postman y servicios
+    origin(
+      origin,
+      callback
+    ) {
+      // Aplicaciones móviles, Postman y llamadas
       // servidor-servidor pueden no enviar Origin.
       if (!origin) {
-        return callback(null, true);
+        return callback(
+          null,
+          true
+        );
       }
 
       // Desarrollo local.
-      if (allowedOrigins.length === 0) {
-        return callback(null, true);
+      if (
+        allowedOrigins.length === 0
+      ) {
+        return callback(
+          null,
+          true
+        );
       }
 
       // Producción.
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
+      if (
+        allowedOrigins.includes(
+          origin
+        )
+      ) {
+        return callback(
+          null,
+          true
+        );
       }
 
       return callback(
@@ -99,104 +149,208 @@ app.use(
 
 
 // ============================================================
-// ARCHIVOS
-//
-// LOCAL:
-//
-// /uploads -> express.static
-//
-// AWS:
-//
-// /uploads -> Backend -> S3 privado
-//
-// De esta forma web y móvil pueden conservar las rutas
-// existentes aunque el archivo ya no viva en EC2.
+// ENVÍO DE OBJETOS DE STORAGE
 // ============================================================
 
-if (getStorageDriver() === 'local') {
+async function sendStorageObject(
+  key: string,
+  res: Response,
+  next: NextFunction,
+  cacheControl:
+    | 'private'
+    | 'public'
+) {
+  try {
+    const object =
+      await readStorageObject(
+        key
+      );
 
-  app.use(
-    '/uploads',
-    express.static(uploadRoot)
-  );
-
-} else {
-
-  app.get(
-    '/uploads/*',
-    async (req, res, next) => {
-      try {
-        const params =
-          req.params as Record<
-            string,
-            string
-          >;
-
-        const key = params['0'];
-
-        if (!key) {
-          return res.status(404).json({
-            ok: false,
-            message:
-              'Archivo no encontrado',
-          });
-        }
-
-        const object =
-          await readStorageObject(key);
-
-        if (!object) {
-          return res.status(404).json({
-            ok: false,
-            message:
-              'Archivo no encontrado',
-          });
-        }
-
-        res.setHeader(
-          'Content-Type',
-          object.contentType
-        );
-
-        res.setHeader(
-          'Content-Length',
-          String(object.body.length)
-        );
-
-        // Evitamos que CloudFront almacene
-        // documentos laborales indefinidamente.
-        res.setHeader(
-          'Cache-Control',
-          'private, no-store'
-        );
-
-        return res.send(object.body);
-
-      } catch (error) {
-        return next(error);
-      }
+    if (!object) {
+      return res
+        .status(404)
+        .json({
+          ok: false,
+          message:
+            'Archivo no encontrado',
+        });
     }
-  );
+
+    res.setHeader(
+      'Content-Type',
+      object.contentType
+    );
+
+    res.setHeader(
+      'Content-Length',
+      String(
+        object.body.length
+      )
+    );
+
+    res.setHeader(
+      'X-Content-Type-Options',
+      'nosniff'
+    );
+
+    if (
+      cacheControl ===
+      'public'
+    ) {
+      res.setHeader(
+        'Cache-Control',
+        'public, max-age=3600'
+      );
+    } else {
+      res.setHeader(
+        'Cache-Control',
+        'private, no-store'
+      );
+
+      res.setHeader(
+        'Pragma',
+        'no-cache'
+      );
+
+      res.setHeader(
+        'Vary',
+        'Authorization'
+      );
+    }
+
+    return res.send(
+      object.body
+    );
+  } catch (error) {
+    return next(error);
+  }
 }
+
+
+// ============================================================
+// ARCHIVO PÚBLICO CORPORATIVO
+// ============================================================
+//
+// Únicamente el logo corporativo se publica sin autenticación.
+//
+// Ningún perfil, contrato, credencial o documento laboral
+// debe agregarse aquí.
+// ============================================================
+
+app.get(
+  '/uploads/empresa/logo-smart-rh.jpeg',
+  async (
+    _req,
+    res,
+    next
+  ) => {
+    return sendStorageObject(
+      'empresa/logo-smart-rh.jpeg',
+      res,
+      next,
+      'public'
+    );
+  }
+);
+
+
+// ============================================================
+// ARCHIVOS PRIVADOS
+// ============================================================
+//
+// Flujo:
+//
+// request
+//   ↓
+// authJwt
+//   ↓
+// authorizeUploadAccess
+//   ↓
+// storage local / S3 privado
+//
+// La misma política aplica en desarrollo y producción.
+// ============================================================
+
+app.get(
+  '/uploads/*',
+
+  authJwt,
+
+  authorizeUploadAccess,
+
+  async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) => {
+    const params =
+      req.params as Record<
+        string,
+        string
+      >;
+
+    const rawKey =
+      params['0'];
+
+    if (!rawKey) {
+      return res
+        .status(404)
+        .json({
+          ok: false,
+          message:
+            'Archivo no encontrado',
+        });
+    }
+
+    let key: string;
+
+    try {
+      key =
+        normalizeStorageKey(
+          rawKey
+        );
+    } catch {
+      return res
+        .status(400)
+        .json({
+          ok: false,
+          message:
+            'Ruta de archivo inválida',
+        });
+    }
+
+    return sendStorageObject(
+      key,
+      res,
+      next,
+      'private'
+    );
+  }
+);
 
 
 // ============================================================
 // HEALTH CHECK
 // ============================================================
 
-app.get('/health', (_req, res) => {
-  res.status(200).json({
-    ok: true,
-    service: 'SMART RH Backend',
-    storage: getStorageDriver(),
-  });
-});
+app.get(
+  '/health',
+  (_req, res) => {
+    res
+      .status(200)
+      .json({
+        ok: true,
+        service:
+          'SMART RH Backend',
+        storage:
+          getStorageDriver(),
+      });
+  }
+);
 
 
 // ============================================================
 // RUTAS PRINCIPALES
-//
-// /etl ya forma parte de mainRouter.
 // ============================================================
 
 app.use(
@@ -209,11 +363,15 @@ app.use(
 // 404
 // ============================================================
 
-app.use(notFound);
+app.use(
+  notFound
+);
 
 
 // ============================================================
 // ERROR HANDLER
 // ============================================================
 
-app.use(errorHandler);
+app.use(
+  errorHandler
+);
