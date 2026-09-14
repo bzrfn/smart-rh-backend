@@ -47,6 +47,56 @@ type ScanResult = {
 // LOG DE EFECTOS NO CRÍTICOS
 // ============================================================
 
+function normalizeSqlDate(
+  value: unknown
+): string {
+
+  if (value instanceof Date) {
+    return value
+      .toISOString()
+      .slice(0, 10);
+  }
+
+
+  const text =
+    String(
+      value ?? ''
+    ).trim();
+
+
+  const directMatch =
+    text.match(
+      /^(\d{4}-\d{2}-\d{2})/
+    );
+
+
+  if (directMatch) {
+    return directMatch[1];
+  }
+
+
+  const parsed =
+    new Date(text);
+
+
+  if (
+    !Number.isNaN(
+      parsed.getTime()
+    )
+  ) {
+    return parsed
+      .toISOString()
+      .slice(0, 10);
+  }
+
+
+  return text.slice(
+    0,
+    10
+  );
+}
+
+
 function logNonCriticalError(
   operation: string,
   error: unknown
@@ -758,13 +808,9 @@ export async function getMisAsistenciasWeeklyReport(
             a.id,
 
           fecha:
-            String(
+            normalizeSqlDate(
               a.fecha
-            )
-              .slice(
-                0,
-                10
-              ),
+            ),
 
           hora_entrada:
             a.hora_entrada,
