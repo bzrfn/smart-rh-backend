@@ -275,9 +275,14 @@ describe(
             token:
               'QR-EXPIRADO',
 
+            valido_hasta:
+              new Date(
+                '2020-01-01T00:00:00.000Z'
+              ),
+
             fecha_expiracion:
               new Date(
-                '2026-09-14T05:20:00.000Z'
+                '2099-01-01T00:00:00.000Z'
               ),
 
             usos: [],

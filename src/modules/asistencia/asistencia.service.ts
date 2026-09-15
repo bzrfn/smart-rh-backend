@@ -144,10 +144,33 @@ export async function generateDynamicQr() {
     new Date();
 
 
-  const exp =
+  // ==========================================================
+  // VALIDEZ
+  //
+  // El QR solamente puede utilizarse durante 10 segundos.
+  // ==========================================================
+
+  const validUntil =
     new Date(
-      Date.now() +
-      env.qr.ttlMinutes *
+      gen.getTime() +
+      env.qr.validitySeconds *
+        1000
+    );
+
+
+  // ==========================================================
+  // RETENCIÓN
+  //
+  // El registro se conserva temporalmente para auditoría.
+  //
+  // Después de 3 minutos MongoDB lo elimina automáticamente
+  // mediante el índice TTL de fecha_expiracion.
+  // ==========================================================
+
+  const deleteAt =
+    new Date(
+      gen.getTime() +
+      env.qr.retentionMinutes *
         60_000
     );
 
@@ -158,8 +181,11 @@ export async function generateDynamicQr() {
     fecha_generacion:
       gen,
 
+    valido_hasta:
+      validUntil,
+
     fecha_expiracion:
-      exp,
+      deleteAt,
 
     usos: [],
   });
@@ -174,8 +200,9 @@ export async function generateDynamicQr() {
   return {
     token,
 
+    // Tiempo real durante el cual puede escanearse.
     expiresAt:
-      exp.toISOString(),
+      validUntil.toISOString(),
 
     dataUrl,
   };
@@ -382,7 +409,7 @@ export async function scanQr(
 
   if (
     new Date(
-      qr.fecha_expiracion
+      qr.valido_hasta
     ).getTime() <
     Date.now()
   ) {

@@ -95,10 +95,16 @@ export const env = {
   // ==========================================================
 
   qr: {
-    ttlMinutes:
+    validitySeconds:
       Number(
-        process.env.QR_TTL_MINUTES ||
-        2
+        process.env.QR_VALIDITY_SECONDS ||
+        10
+      ),
+
+    retentionMinutes:
+      Number(
+        process.env.QR_RETENTION_MINUTES ||
+        3
       ),
   },
 

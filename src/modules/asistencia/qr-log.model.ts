@@ -36,12 +36,31 @@ const qrLogSchema =
         default: Date.now,
       },
 
+      // ======================================================
+      // VALIDEZ DEL QR
+      //
+      // Determina hasta cuándo este código puede utilizarse
+      // para registrar asistencia.
+      // ======================================================
+
+      valido_hasta: {
+        type: Date,
+        required: true,
+      },
+
+
+      // ======================================================
+      // RETENCIÓN DEL REGISTRO
+      //
+      // No representa la validez para escanear.
+      //
+      // MongoDB elimina automáticamente el documento cuando
+      // llega esta fecha mediante el índice TTL.
+      // ======================================================
+
       fecha_expiracion: {
         type: Date,
         required: true,
-
-        // MongoDB elimina automáticamente
-        // documentos cuando llega esta fecha.
         expires: 0,
       },
 
