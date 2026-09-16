@@ -371,7 +371,7 @@ export function buildCredentialSvg(
         x="60"
         y="575"
         width="600"
-        height="360"
+        height="390"
         rx="30"
         fill="${WHITE}"
         stroke="${BORDER}"
@@ -379,6 +379,7 @@ export function buildCredentialSvg(
         filter="url(#shadow)"
       />
 
+      <!-- TÍTULO -->
       <text
         x="100"
         y="620"
@@ -399,11 +400,15 @@ export function buildCredentialSvg(
         stroke-width="1"
       />
 
+      <!-- ================================================== -->
+      <!-- FILA 1: ID DE EMPLEADO / ROL                     -->
+      <!-- ================================================== -->
+
       <!-- ID -->
       <text
         x="100"
         y="680"
-        font-size="16"
+        font-size="15"
         font-weight="800"
         letter-spacing="1"
         fill="${MUTED}"
@@ -425,7 +430,7 @@ export function buildCredentialSvg(
       <text
         x="390"
         y="680"
-        font-size="16"
+        font-size="15"
         font-weight="800"
         letter-spacing="1"
         fill="${MUTED}"
@@ -443,11 +448,14 @@ export function buildCredentialSvg(
         ${rol}
       </text>
 
-      <!-- CORREO -->
+      <!-- ================================================== -->
+      <!-- FILA 2: CORREO                                    -->
+      <!-- ================================================== -->
+
       <text
         x="100"
         y="760"
-        font-size="16"
+        font-size="15"
         font-weight="800"
         letter-spacing="1"
         fill="${MUTED}"
@@ -465,11 +473,14 @@ export function buildCredentialSvg(
         ${correo}
       </text>
 
-      <!-- PERIODO -->
+      <!-- ================================================== -->
+      <!-- FILA 3: PERIODO CONTRACTUAL                       -->
+      <!-- ================================================== -->
+
       <text
         x="100"
         y="840"
-        font-size="16"
+        font-size="15"
         font-weight="800"
         letter-spacing="1"
         fill="${MUTED}"
@@ -481,41 +492,47 @@ export function buildCredentialSvg(
         x="100"
         y="873"
         font-size="21"
-        font-weight="600"
-        fill="${TEXT}"
+        font-weight="700"
+        fill="${PRIMARY}"
       >
         ${periodo}
       </text>
 
-      <!-- VIGENCIA -->
+      <!-- ================================================== -->
+      <!-- FILA 4: VIGENCIA                                  -->
+      <!-- ================================================== -->
+
       <text
-        x="390"
-        y="840"
-        font-size="16"
+        x="100"
+        y="910"
+        font-size="15"
         font-weight="800"
         letter-spacing="1"
         fill="${MUTED}"
       >
-        VIGENCIA
+        VIGENCIA DE LA CREDENCIAL
       </text>
 
       <text
-        x="390"
-        y="873"
-        font-size="21"
-        font-weight="600"
-        fill="${TEXT}"
+        x="100"
+        y="943"
+        font-size="20"
+        font-weight="700"
+        fill="${PRIMARY}"
       >
         ${vigencia}
       </text>
 
-      <!-- QR -->
+      <!-- ================================================== -->
+      <!-- QR                                                 -->
+      <!-- ================================================== -->
+
       <rect
-        x="250"
-        y="960"
-        width="220"
-        height="220"
-        rx="28"
+        x="260"
+        y="990"
+        width="200"
+        height="200"
+        rx="26"
         fill="${WHITE}"
         stroke="${BORDER}"
         stroke-width="1"
@@ -524,17 +541,17 @@ export function buildCredentialSvg(
 
       <image
         href="data:image/png;base64,${data.qrBase64}"
-        x="270"
-        y="980"
-        width="180"
-        height="180"
+        x="275"
+        y="1005"
+        width="170"
+        height="170"
       />
 
       <text
         x="360"
-        y="1202"
+        y="1210"
         text-anchor="middle"
-        font-size="16"
+        font-size="15"
         font-weight="600"
         fill="${MUTED}"
       >
