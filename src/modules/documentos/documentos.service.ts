@@ -14,8 +14,9 @@ import {
 } from '../../config/storage.js';
 
 import {
-  generarContratoProfesionalPdf,
-} from '../../utils/pdfGenerator.js';
+  buildContractPdfBuffer,
+  buildCredentialSvg,
+} from '../../utils/documentDesign.js';
 
 import {
   registrarAuditoria,
@@ -529,16 +530,13 @@ export async function guardarFotoPerfil(
 
 export async function generarContratoPdf(
   usuarioId: number,
-
   actorId?: number,
-
   ip?: string
 ) {
   const user =
     await findUserDocumentData(
       usuarioId
     );
-
 
   if (!user) {
     throw new AppError(
@@ -547,12 +545,10 @@ export async function generarContratoPdf(
     );
   }
 
-
   const contrato =
     await findLatestContratoByUser(
       usuarioId
     );
-
 
   if (!contrato) {
     throw new AppError(
@@ -560,7 +556,6 @@ export async function generarContratoPdf(
       404
     );
   }
-
 
   const nombreCompleto =
     `${safeText(
@@ -571,34 +566,40 @@ export async function generarContratoPdf(
       ''
     )}`.trim();
 
-
   const vacaciones =
     calcularVacaciones(
       contrato.fecha_inicio ||
         user.fecha_ingreso
     );
 
-
   const folio =
     `CTR-${usuarioId}-${contrato.id}-${Date.now()}`;
 
+  const filename =
+    `contrato_${usuarioId}_${contrato.id}_${Date.now()}.pdf`;
+
+  // ----------------------------------------------------------
+  // LOGO CORPORATIVO
+  // ----------------------------------------------------------
 
   const logoBuffer =
     await getSmartRhLogo();
 
+  // ----------------------------------------------------------
+  // PDF PROFESIONAL EN MEMORIA
+  // ----------------------------------------------------------
 
-  const archivoUrl =
-    await generarContratoProfesionalPdf({
-      filename:
-        `contrato_${usuarioId}_${contrato.id}_${Date.now()}.pdf`,
+  const pdfBuffer =
+    await buildContractPdfBuffer({
+      folio,
 
       logoBuffer,
 
-      folio,
-
       empleado: {
         id:
-          Number(user.id),
+          Number(
+            user.id
+          ),
 
         nombreCompleto,
 
@@ -661,6 +662,16 @@ export async function generarContratoPdf(
       },
     });
 
+  // ----------------------------------------------------------
+  // STORAGE LOCAL / S3 PRIVADO
+  // ----------------------------------------------------------
+
+  const archivoUrl =
+    await writeStorageObject(
+      `contratos/${filename}`,
+      pdfBuffer,
+      'application/pdf'
+    );
 
   await setContratoPdf(
     Number(
@@ -668,7 +679,6 @@ export async function generarContratoPdf(
     ),
     archivoUrl
   );
-
 
   await registrarDocumentoMongo(
     usuarioId,
@@ -687,7 +697,6 @@ export async function generarContratoPdf(
       vacaciones,
     }
   );
-
 
   await registrarAuditoria({
     usuario_id:
@@ -718,7 +727,6 @@ export async function generarContratoPdf(
     },
   });
 
-
   return {
     contrato_id:
       contrato.id,
@@ -734,6 +742,7 @@ export async function generarContratoPdf(
 // ============================================================
 // CREDENCIAL DIGITAL
 // ============================================================
+
 
 export async function generarCredencialImagen(
   usuarioId: number,
@@ -884,393 +893,45 @@ export async function generarCredencialImagen(
     );
 
 
-  const initial =
-    escapeXml(
-      nombreCompleto
-        .slice(
-          0,
-          1
-        )
-        .toUpperCase()
-    );
-
-
-  const avatarContent =
-    profileImage
-      ? `
-        <image
-          href="data:${profileImage.mime};base64,${profileImage.base64}"
-          x="254"
-          y="212"
-          width="212"
-          height="212"
-          preserveAspectRatio="xMidYMid slice"
-          clip-path="url(#avatarClip)"
-        />
-      `
-      : `
-        <text
-          x="360"
-          y="345"
-          text-anchor="middle"
-          font-size="78"
-          font-weight="800"
-          fill="#073b5a"
-        >
-          ${initial}
-        </text>
-      `;
-
-
   // ----------------------------------------------------------
-  // SVG
+  // DISEÑO INSTITUCIONAL
   // ----------------------------------------------------------
 
-  const svg = `
-    <svg
-      width="${width}"
-      height="${height}"
-      xmlns="http://www.w3.org/2000/svg"
-      font-family="DejaVu Sans, Liberation Sans, Arial, Helvetica, sans-serif"
-    >
-      <defs>
-        <linearGradient
-          id="headerBg"
-          x1="0"
-          x2="1"
-          y1="0"
-          y2="1"
-        >
-          <stop
-            offset="0%"
-            stop-color="#062b46"
-          />
+  const svg =
+    buildCredentialSvg({
+      width,
+      height,
 
-          <stop
-            offset="55%"
-            stop-color="#057d8c"
-          />
-
-          <stop
-            offset="100%"
-            stop-color="#0fb3a8"
-          />
-        </linearGradient>
-
-        <filter
-          id="shadow"
-          x="-20%"
-          y="-20%"
-          width="140%"
-          height="140%"
-        >
-          <feDropShadow
-            dx="0"
-            dy="10"
-            stdDeviation="10"
-            flood-color="#0b2f45"
-            flood-opacity="0.18"
-          />
-        </filter>
-
-        <clipPath
-          id="avatarClip"
-        >
-          <circle
-            cx="360"
-            cy="318"
-            r="106"
-          />
-        </clipPath>
-      </defs>
-
-
-      <rect
-        width="720"
-        height="1280"
-        rx="46"
-        fill="#f4f8fb"
-      />
-
-
-      <rect
-        x="0"
-        y="0"
-        width="720"
-        height="292"
-        rx="46"
-        fill="url(#headerBg)"
-      />
-
-
-      <rect
-        x="0"
-        y="245"
-        width="720"
-        height="72"
-        fill="#f4f8fb"
-      />
-
-
-      ${
-        logoBase64
-          ? `
-            <rect
-              x="130"
-              y="58"
-              width="460"
-              height="128"
-              rx="18"
-              fill="#ffffff"
-              opacity="0.96"
-            />
-
-            <image
-              href="data:image/jpeg;base64,${logoBase64}"
-              x="150"
-              y="78"
-              width="420"
-              height="88"
-              preserveAspectRatio="xMidYMid meet"
-            />
-          `
-          : `
-            <text
-              x="360"
-              y="132"
-              text-anchor="middle"
-              font-size="54"
-              font-weight="800"
-              fill="#ffffff"
-            >
-              SMART RH
-            </text>
-
-            <text
-              x="360"
-              y="172"
-              text-anchor="middle"
-              font-size="18"
-              font-weight="600"
-              fill="#dff9f7"
-            >
-              Recursos Humanos Inteligentes
-            </text>
-          `
-      }
-
-
-      <circle
-        cx="360"
-        cy="318"
-        r="116"
-        fill="#ffffff"
-        stroke="#0aa6a6"
-        stroke-width="8"
-        filter="url(#shadow)"
-      />
-
-
-      ${avatarContent}
-
-
-      <text
-        x="360"
-        y="505"
-        text-anchor="middle"
-        font-size="38"
-        font-weight="800"
-        fill="#073b5a"
-      >
-        ${escapeXml(
-          limitText(
-            nombreCompleto,
-            28
-          )
-        )}
-      </text>
-
-
-      <text
-        x="360"
-        y="555"
-        text-anchor="middle"
-        font-size="25"
-        font-weight="700"
-        fill="#0aa6a6"
-      >
-        ${escapeXml(
-          limitText(
-            rol,
-            30
-          )
-        )}
-      </text>
-
-
-      <rect
-        x="66"
-        y="615"
-        width="588"
-        height="270"
-        rx="30"
-        fill="#ffffff"
-        stroke="#dbe7ee"
-        filter="url(#shadow)"
-      />
-
-
-      <text
-        x="112"
-        y="675"
-        font-size="24"
-        font-weight="800"
-        fill="#073b5a"
-      >
-        ID empleado
-      </text>
-
-
-      <text
-        x="390"
-        y="675"
-        font-size="24"
-        font-weight="600"
-        fill="#263b4a"
-      >
-        #${escapeXml(
+      employeeId:
+        Number(
           user.id
-        )}
-      </text>
+        ),
+
+      nombreCompleto,
+
+      rol,
+
+      correo:
+        safeText(
+          user.correo
+        ),
+
+      fechaInicioContrato:
+        contrato.fecha_inicio,
+
+      fechaFinContrato:
+        contrato.fecha_fin,
+
+      vigencia,
+
+      logoBase64,
+
+      qrBase64,
+
+      profileImage,
+    });
 
 
-      <text
-        x="112"
-        y="735"
-        font-size="24"
-        font-weight="800"
-        fill="#073b5a"
-      >
-        Correo
-      </text>
-
-
-      <text
-        x="390"
-        y="735"
-        font-size="22"
-        font-weight="500"
-        fill="#263b4a"
-      >
-        ${escapeXml(
-          limitText(
-            user.correo,
-            25
-          )
-        )}
-      </text>
-
-
-      <text
-        x="112"
-        y="795"
-        font-size="24"
-        font-weight="800"
-        fill="#073b5a"
-      >
-        Contrato
-      </text>
-
-
-      <text
-        x="390"
-        y="795"
-        font-size="22"
-        font-weight="500"
-        fill="#263b4a"
-      >
-        ${escapeXml(
-          fechaInicioContrato
-        )}
-        -
-        ${escapeXml(
-          fechaFinContrato
-        )}
-      </text>
-
-
-      <text
-        x="112"
-        y="855"
-        font-size="24"
-        font-weight="800"
-        fill="#073b5a"
-      >
-        Vigencia
-      </text>
-
-
-      <text
-        x="390"
-        y="855"
-        font-size="22"
-        font-weight="500"
-        fill="#263b4a"
-      >
-        ${escapeXml(
-          formatDateShort(
-            vigencia
-          )
-        )}
-      </text>
-
-
-      <rect
-        x="245"
-        y="930"
-        width="230"
-        height="230"
-        rx="26"
-        fill="#ffffff"
-        stroke="#dbe7ee"
-        filter="url(#shadow)"
-      />
-
-
-      <image
-        href="data:image/png;base64,${qrBase64}"
-        x="265"
-        y="950"
-        width="190"
-        height="190"
-      />
-
-
-      <rect
-        x="76"
-        y="1200"
-        width="568"
-        height="48"
-        rx="18"
-        fill="#073b5a"
-      />
-
-
-      <text
-        x="360"
-        y="1231"
-        text-anchor="middle"
-        font-size="19"
-        font-weight="800"
-        fill="#ffffff"
-      >
-        CREDENCIAL DIGITAL SMART RH
-      </text>
-    </svg>
-  `;
-
-
-  // ----------------------------------------------------------
   // PNG EN MEMORIA
   // ----------------------------------------------------------
 
