@@ -327,3 +327,79 @@ export async function enviarPasswordActualizadoEmail(data: {
       'Por seguridad, mantén tus credenciales privadas y no compartas códigos de acceso.',
   });
 }
+
+export async function enviarAlertaMonitoreoEmail(data: {
+  correo: string;
+  alarma: string;
+  estado: string;
+  motivo: string;
+  fecha: string;
+  region?: string;
+  recurso?: string;
+}) {
+  const estado =
+    String(
+      data.estado || 'NOTIFICACION'
+    )
+      .trim()
+      .toUpperCase();
+
+  const badge =
+    estado === 'ALARM'
+      ? 'ALERTA AWS'
+      : estado === 'OK'
+        ? 'SERVICIO RECUPERADO'
+        : 'MONITOREO AWS';
+
+  const details: EmailDetail[] = [
+    {
+      label: 'Alarma',
+      value: data.alarma,
+    },
+    {
+      label: 'Estado',
+      value: estado,
+    },
+    {
+      label: 'Fecha',
+      value: data.fecha,
+    },
+  ];
+
+  if (data.region) {
+    details.push({
+      label: 'Región',
+      value: data.region,
+    });
+  }
+
+  if (data.recurso) {
+    details.push({
+      label: 'Recurso',
+      value: data.recurso,
+    });
+  }
+
+  details.push({
+    label: 'Motivo',
+    value: data.motivo,
+  });
+
+  await sendSmartRhEmail({
+    to: data.correo,
+    subject:
+      `SMART RH | Monitoreo ${estado}: ${data.alarma}`,
+    badge,
+    title:
+      estado === 'OK'
+        ? `Servicio recuperado: ${data.alarma}`
+        : `Alerta de infraestructura: ${data.alarma}`,
+    intro:
+      estado === 'OK'
+        ? 'CloudWatch informó que el recurso volvió a su estado normal.'
+        : 'CloudWatch detectó un evento que requiere atención operativa.',
+    details,
+    footerNote:
+      'Mensaje automático del monitoreo de infraestructura de SMART RH. No respondas a este correo.',
+  });
+}

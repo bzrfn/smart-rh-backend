@@ -15,6 +15,8 @@ import { actividadRoutes } from '../modules/actividad/actividad.routes.js';
 import { soporteRoutes } from '../modules/soporte/soporte.routes.js';
 import contactoRoutes from '../modules/contacto/contacto.routes.js';
 import { mlRoutes } from '../modules/ml/ml.routes.js';
+import { awsSnsRoutes } from '../modules/integrations/awsSns.routes.js';
+
 export const router = Router();
 import wearableRoutes from '../modules/wearables/wearables.routes.js';
 import { kmeansRoutes } from '../modules/kmeans/kmeans.routes.js';
@@ -39,3 +41,4 @@ router.use('/ml', mlRoutes);
 router.use('/wearables', wearableRoutes);
 router.use('/kmeans', kmeansRoutes);
 router.use('/analytics', analyticsRoutes);
+router.use('/integrations', awsSnsRoutes);
