@@ -247,7 +247,7 @@ export function buildAdminAccessService(
         ADMIN_ACCESS_COOLDOWN_SECONDS
     ) {
       return neutralRequestResponse(
-        activeChallenge.challengeId
+        fallbackChallengeId
       );
     }
 
@@ -283,8 +283,6 @@ export function buildAdminAccessService(
         ADMIN_ACCESS_MAX_PER_IP_WINDOW
     ) {
       return neutralRequestResponse(
-        activeChallenge
-          ?.challengeId ||
         fallbackChallengeId
       );
     }

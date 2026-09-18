@@ -274,7 +274,7 @@ describe(
 
 
     test(
-      'cooldown reutiliza challenge activo sin enviar otro correo',
+      'cooldown no revela el challenge activo y no envia otro correo',
       async () => {
         const deps =
           createDependencies();
@@ -310,10 +310,103 @@ describe(
 
         expect(
           result.challengeId
-        ).toBe(
+        ).toMatch(
+          /^[a-f0-9]{64}$/
+        );
+
+        expect(
+          result.challengeId
+        ).not.toBe(
           'a'.repeat(
             64
           )
+        );
+
+        expect(
+          deps.createAdminAccessChallenge
+        ).not.toHaveBeenCalled();
+
+        expect(
+          deps.sendAdminAccessCodeEmail
+        ).not.toHaveBeenCalled();
+      }
+    );
+
+
+
+    test(
+      'solicitudes repetidas no permiten distinguir challenge real de un señuelo',
+      async () => {
+        const deps =
+          createDependencies();
+
+        deps
+          .findEligibleAdminByEmail
+          .mockResolvedValue(
+            admin
+          );
+
+        deps
+          .findLatestActiveAdminChallenge
+          .mockResolvedValue({
+            challengeId:
+              'd'.repeat(
+                64
+              ),
+
+            secondsElapsed:
+              10,
+          });
+
+        const service =
+          buildAdminAccessService(
+            deps as any
+          );
+
+        const first =
+          await service.requestAdminAccess(
+            admin.correo,
+            '127.0.0.1'
+          );
+
+        const second =
+          await service.requestAdminAccess(
+            admin.correo,
+            '127.0.0.1'
+          );
+
+        expect(
+          first.challengeId
+        ).toMatch(
+          /^[a-f0-9]{64}$/
+        );
+
+        expect(
+          second.challengeId
+        ).toMatch(
+          /^[a-f0-9]{64}$/
+        );
+
+        expect(
+          first.challengeId
+        ).not.toBe(
+          'd'.repeat(
+            64
+          )
+        );
+
+        expect(
+          second.challengeId
+        ).not.toBe(
+          'd'.repeat(
+            64
+          )
+        );
+
+        expect(
+          first.challengeId
+        ).not.toBe(
+          second.challengeId
         );
 
         expect(
