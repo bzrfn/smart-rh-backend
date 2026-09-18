@@ -1,16 +1,21 @@
 import { pool } from '../../config/db.js';
 
+// Tipo auxiliar para representar una fila genérica de la base de datos.
 type Row = Record<string, any>;
 
+// Convierte cualquier valor en número; si no se puede convertir, devuelve 0.
 function toNumber(value: any) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+// Normaliza texto para comparar estados, nombres o valores de forma consistente.
 function normalizeText(value: any) {
   return String(value || '').trim().toLowerCase();
 }
 
+// Busca el primer valor numérico válido entre varias claves posibles.
+// Esto sirve porque algunas tablas usan nombres ligeramente distintos para el mismo dato.
 function getFirstNumber(row: Row, keys: string[]) {
   for (const key of keys) {
     if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
@@ -21,6 +26,7 @@ function getFirstNumber(row: Row, keys: string[]) {
   return 0;
 }
 
+// Obtiene el ID de usuario desde nombres de columna alternativos.
 function getUsuarioId(row: Row) {
   return toNumber(
     row.usuario_id ??
@@ -31,6 +37,7 @@ function getUsuarioId(row: Row) {
   );
 }
 
+// Normaliza una fecha para usarla como clave de agrupación sin problemas de zona horaria.
 function formatDateKey(value: any) {
   if (!value) return 'Sin fecha';
 
@@ -43,6 +50,7 @@ function formatDateKey(value: any) {
   return date.toISOString().slice(0, 10);
 }
 
+// Construye el nombre completo del empleado para mostrarlo en reportes y gráficas.
 function displayName(usuario?: Row) {
   if (!usuario) return 'Sin empleado';
 
@@ -52,6 +60,7 @@ function displayName(usuario?: Row) {
   return `${nombre} ${apellido}`.trim() || usuario.correo || 'Sin empleado';
 }
 
+// Calcula el promedio de un arreglo de números ignorando valores inválidos.
 function average(values: number[]) {
   const validValues = values.filter((value) => Number.isFinite(value));
 
@@ -60,6 +69,7 @@ function average(values: number[]) {
   return validValues.reduce((sum, value) => sum + value, 0) / validValues.length;
 }
 
+// Verifica si una tabla existe en la base de datos actual.
 async function tableExists(tableName: string) {
   const [rows] = await pool.query(
     `
@@ -74,6 +84,7 @@ async function tableExists(tableName: string) {
   return toNumber((rows as any[])[0]?.total) > 0;
 }
 
+// Selecciona todos los registros de una tabla solo si existe.
 async function safeSelectAll(tableName: string) {
   const exists = await tableExists(tableName);
 
@@ -86,6 +97,63 @@ async function safeSelectAll(tableName: string) {
   return rows as Row[];
 }
 
+
+// Obtiene los usuarios junto con el nombre real de su rol.
+// Evita depender de IDs fijos como rol_id = 1 para identificar administradores.
+async function safeSelectUsuariosConRol() {
+  const [usuariosExiste, rolesExiste] =
+    await Promise.all([
+      tableExists('usuarios'),
+      tableExists('roles'),
+    ]);
+
+  if (
+    !usuariosExiste ||
+    !rolesExiste
+  ) {
+    return [] as Row[];
+  }
+
+  const [rows] =
+    await pool.query(
+      `SELECT
+         u.*,
+         r.nombre AS rol_nombre
+       FROM usuarios u
+       JOIN roles r
+         ON r.id = u.rol_id`
+    );
+
+  return rows as Row[];
+}
+
+
+// Determina si un usuario activo debe formar parte
+// de las métricas de personal de Analytics.
+export function isAnalyticsEmployee(
+  usuario: Row
+): boolean {
+  const activo =
+    toNumber(
+      usuario.activo ?? 1
+    );
+
+  const rol =
+    normalizeText(
+      usuario.rol_nombre ??
+      usuario.role ??
+      usuario.rol
+    );
+
+  return (
+    activo === 1 &&
+    rol !== 'admin' &&
+    rol !== 'administrador'
+  );
+}
+
+// Normaliza distintos nombres de estados para que queden dentro de un conjunto fijo.
+// Ejemplo: "aprobado", "aprobada", "approved" o "pendiente" se convierten a un mismo formato.
 function normalizeEstado(value: any) {
   const estado = normalizeText(value);
 
@@ -102,6 +170,8 @@ function normalizeEstado(value: any) {
   return estado;
 }
 
+// Construye una gráfica de barras o de conteo a partir de una lista de filas y una lista base de estados.
+// Sirve para saber, por ejemplo, cuántas asistencias están aprobadas, pendientes o rechazadas.
 function buildEstadoChart(
   rows: Row[],
   defaultEstados: string[],
@@ -124,6 +194,7 @@ function buildEstadoChart(
   }));
 }
 
+// Agrupa asistencias por fecha para representar la evolución temporal del comportamiento del personal.
 function buildAsistenciaPorFecha(asistencias: Row[]) {
   const map = new Map<
     string,
@@ -162,6 +233,7 @@ function buildAsistenciaPorFecha(asistencias: Row[]) {
     .slice(-20);
 }
 
+// Calcula el promedio de nómina por empleado a partir de todas sus filas de nómina.
 function buildNominaPorEmpleado(nominas: Row[], usuariosMap: Map<number, Row>) {
   const map = new Map<number, number[]>();
 
@@ -195,6 +267,7 @@ function buildNominaPorEmpleado(nominas: Row[], usuariosMap: Map<number, Row>) {
     .slice(0, 10);
 }
 
+// Agrupa las solicitudes de vacaciones por empleado y suma los días solicitados.
 function buildVacacionesPorEmpleado(
   vacaciones: Row[],
   usuariosMap: Map<number, Row>
@@ -237,6 +310,8 @@ function buildVacacionesPorEmpleado(
     .slice(0, 10);
 }
 
+// Combina asistencia, nómina y vacaciones para crear una vista comparativa por empleado.
+// Sirve para detectar relación entre rendimiento de asistencia y nivel salarial o descanso solicitado.
 function buildAsistenciaVsNomina(
   usuarios: Row[],
   asistencias: Row[],
@@ -333,6 +408,7 @@ function buildAsistenciaVsNomina(
     .filter((item) => item.asistencias > 0 || item.nomina_promedio > 0);
 }
 
+// Genera interpretaciones automáticas para contextualizar cada KPI y permitir lectura del dashboard.
 function buildInterpretaciones(params: {
   totalEmpleados: number;
   totalAsistencias: number;
@@ -388,28 +464,33 @@ function buildInterpretaciones(params: {
   };
 }
 
+// Función principal que arma el resumen visual del dashboard.
+// Reúne KPI, gráficas, descripciones e interpretaciones para ser consumido por la API.
 export async function obtenerResumenVisualRepository() {
+  // Carga todas las tablas relevantes de RRHH en paralelo para acelerar la consulta.
   const [usuarios, asistencias, contratos, nominas, vacaciones] = await Promise.all([
-    safeSelectAll('usuarios'),
+    safeSelectUsuariosConRol(),
     safeSelectAll('asistencias'),
     safeSelectAll('contratos'),
     safeSelectAll('nominas'),
     safeSelectAll('vacaciones'),
   ]);
 
-  const empleados = usuarios.filter((usuario) => {
-    const activo = toNumber(usuario.activo ?? 1);
-    const rolId = toNumber(usuario.rol_id ?? usuario.role_id ?? 0);
-
-    return activo === 1 && rolId !== 1;
-  });
+  // Filtra personal activo usando el nombre real del rol.
+  // No depende de que el administrador tenga un ID específico.
+  const empleados =
+    usuarios.filter(
+      isAnalyticsEmployee
+    );
 
   const empleadosIds = new Set(empleados.map((usuario) => toNumber(usuario.id)));
 
+  // Mapea usuarios para buscar su información rápidamente en los reportes.
   const usuariosMap = new Map<number, Row>(
     empleados.map((usuario) => [toNumber(usuario.id), usuario])
   );
 
+  // Limpia cada conjunto de registros para trabajar solo con empleados válidos.
   const asistenciasFiltradas = asistencias.filter((row) =>
     empleadosIds.has(getUsuarioId(row))
   );
@@ -428,6 +509,7 @@ export async function obtenerResumenVisualRepository() {
 
   const totalAsistencias = asistenciasFiltradas.length;
 
+  // Calcula contadores por estado para la sección de asistencia.
   const asistenciasAprobadas = asistenciasFiltradas.filter(
     (row) => normalizeEstado(row.estado) === 'aprobada'
   ).length;
@@ -440,6 +522,7 @@ export async function obtenerResumenVisualRepository() {
     (row) => normalizeEstado(row.estado) === 'rechazada'
   ).length;
 
+  // Extrae los valores de nómina de todas las filas del personal activo.
   const nominaValores = nominasFiltradas.map((row) =>
     getFirstNumber(row, [
       'total',
@@ -453,6 +536,7 @@ export async function obtenerResumenVisualRepository() {
 
   const promedioNomina = average(nominaValores);
 
+  // Cuenta contratos activos para KPI de estructura laboral.
   const contratosActivos = contratosFiltrados.filter(
     (row) => normalizeEstado(row.estado) === 'activo'
   ).length;
@@ -462,6 +546,7 @@ export async function obtenerResumenVisualRepository() {
   const tasaAprobacion =
     totalAsistencias > 0 ? asistenciasAprobadas / totalAsistencias : 0;
 
+  // Construye los grupos de datos usados por el dashboard para graficar.
   const charts = {
     asistenciasPorEstado: buildEstadoChart(asistenciasFiltradas, [
       'aprobada',
@@ -492,6 +577,7 @@ export async function obtenerResumenVisualRepository() {
     ),
   };
 
+  // Genera interpretaciones textuales para explicarle al usuario qué significan los KPI.
   const interpretaciones = buildInterpretaciones({
     totalEmpleados: empleados.length,
     totalAsistencias,
@@ -501,6 +587,7 @@ export async function obtenerResumenVisualRepository() {
     totalIncidencias,
   });
 
+  // Describe cada gráfica del dashboard y el tipo de visualización más útil para ella.
   const graficas = [
     {
       nombre: 'Asistencias por estado',
@@ -539,6 +626,7 @@ export async function obtenerResumenVisualRepository() {
     },
   ];
 
+  // Devuelve todo el resumen listo para que la capa de servicio o controlador lo envíe a frontend.
   return {
     generatedAt: new Date().toISOString(),
     kpis: {
