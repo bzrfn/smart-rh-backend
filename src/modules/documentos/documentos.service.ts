@@ -6,6 +6,11 @@ import QRCode from 'qrcode';
 
 import {
   addOneCalendarMonthClamped,
+  buildCredentialQrPayload,
+  createCredentialVerificationToken,
+  credentialEmployeeCode,
+  hashCredentialVerificationToken,
+  isCredentialVerificationToken,
 } from './credential.utils.js';
 
 import { AppError } from '../../utils/AppError.js';
@@ -403,6 +408,61 @@ async function registrarDocumentoMongo(
       error
     );
   }
+}
+
+
+// ============================================================
+// CREDENCIAL VERIFICABLE - REGISTRO OBLIGATORIO
+// ============================================================
+
+async function registrarCredencialVerificableMongo(
+  params: {
+    usuarioId: number;
+    archivoUrl: string;
+    actorId?: number;
+    contratoId: number;
+    fechaInicio?: string | Date | null;
+    fechaFin?: string | Date | null;
+    vigencia: string;
+    verificationTokenHash: string;
+  }
+) {
+  await DocumentoGeneradoModel.create({
+    usuario_id:
+      params.usuarioId,
+
+    tipo:
+      'CREDENCIAL_IMAGEN',
+
+    archivo_url:
+      params.archivoUrl,
+
+    generado_por:
+      params.actorId,
+
+    estatus:
+      'GENERADO',
+
+    metadata: {
+      usuario_id:
+        params.usuarioId,
+
+      contrato_id:
+        params.contratoId,
+
+      fecha_inicio:
+        params.fechaInicio,
+
+      fecha_fin:
+        params.fechaFin,
+
+      vigencia:
+        params.vigencia,
+
+      verification_token_hash:
+        params.verificationTokenHash,
+    },
+  });
 }
 
 
@@ -830,29 +890,20 @@ export async function generarCredencialImagen(
   // QR
   // ----------------------------------------------------------
 
+  const verificationToken =
+    createCredentialVerificationToken();
+
+
+  const verificationTokenHash =
+    hashCredentialVerificationToken(
+      verificationToken
+    );
+
+
   const qrPayload =
-    JSON.stringify({
-      tipo:
-        'CREDENCIAL_SMART_RH',
-
-      usuario_id:
-        user.id,
-
-      nombre:
-        nombreCompleto,
-
-      correo:
-        user.correo,
-
-      fecha_inicio:
-        contrato.fecha_inicio,
-
-      fecha_fin:
-        contrato.fecha_fin,
-
-      vigencia:
-        vigencia.toISOString(),
-    });
+    buildCredentialQrPayload(
+      verificationToken
+    );
 
 
   const qrDataUrl =
@@ -961,33 +1012,34 @@ export async function generarCredencialImagen(
     );
 
 
+  await registrarCredencialVerificableMongo({
+    usuarioId,
+
+    archivoUrl,
+
+    actorId,
+
+    contratoId:
+      Number(
+        contrato.id
+      ),
+
+    fechaInicio:
+      contrato.fecha_inicio,
+
+    fechaFin:
+      contrato.fecha_fin,
+
+    vigencia:
+      vigencia.toISOString(),
+
+    verificationTokenHash,
+  });
+
+
   await setUserCredencial(
     usuarioId,
     archivoUrl
-  );
-
-
-  await registrarDocumentoMongo(
-    usuarioId,
-    'CREDENCIAL_IMAGEN',
-    archivoUrl,
-    actorId,
-    {
-      usuario_id:
-        usuarioId,
-
-      contrato_id:
-        contrato.id,
-
-      fecha_inicio:
-        contrato.fecha_inicio,
-
-      fecha_fin:
-        contrato.fecha_fin,
-
-      vigencia:
-        vigencia.toISOString(),
-    }
   );
 
 
@@ -1019,6 +1071,178 @@ export async function generarCredencialImagen(
   return {
     credencial_url:
       archivoUrl,
+
+    vigencia:
+      vigencia.toISOString(),
+  };
+}
+
+
+function invalidCredentialVerification() {
+  return {
+    valida: false,
+    estado: 'NO_VALIDA' as const,
+  };
+}
+
+
+export async function verificarCredencialToken(
+  rawToken: string
+) {
+  const token =
+    String(
+      rawToken || ''
+    ).trim();
+
+
+  if (
+    !isCredentialVerificationToken(
+      token
+    )
+  ) {
+    return invalidCredentialVerification();
+  }
+
+
+  const tokenHash =
+    hashCredentialVerificationToken(
+      token
+    );
+
+
+  const documento: any =
+    await DocumentoGeneradoModel
+      .findOne({
+        tipo:
+          'CREDENCIAL_IMAGEN',
+
+        estatus:
+          'GENERADO',
+
+        'metadata.verification_token_hash':
+          tokenHash,
+      })
+      .lean();
+
+
+  if (!documento) {
+    return invalidCredentialVerification();
+  }
+
+
+  const metadata =
+    documento.metadata || {};
+
+
+  const vigencia =
+    new Date(
+      metadata.vigencia
+    );
+
+
+  if (
+    Number.isNaN(
+      vigencia.getTime()
+    ) ||
+    vigencia.getTime() <=
+      Date.now()
+  ) {
+    return invalidCredentialVerification();
+  }
+
+
+  const usuarioId =
+    Number(
+      documento.usuario_id
+    );
+
+
+  if (
+    !Number.isInteger(usuarioId) ||
+    usuarioId <= 0
+  ) {
+    return invalidCredentialVerification();
+  }
+
+
+  const user =
+    await findUserDocumentData(
+      usuarioId
+    );
+
+
+  if (
+    !user ||
+    Number(
+      user.activo
+    ) !== 1
+  ) {
+    return invalidCredentialVerification();
+  }
+
+
+  if (
+    String(
+      user.credencial_url || ''
+    ) !==
+    String(
+      documento.archivo_url || ''
+    )
+  ) {
+    return invalidCredentialVerification();
+  }
+
+
+  const contrato =
+    await findActiveContratoByUser(
+      usuarioId
+    );
+
+
+  if (
+    !contrato ||
+    Number(
+      contrato.id
+    ) !==
+    Number(
+      metadata.contrato_id
+    )
+  ) {
+    return invalidCredentialVerification();
+  }
+
+
+  const nombreCompleto =
+    `${safeText(
+      user.nombre,
+      ''
+    )} ${safeText(
+      user.apellido,
+      ''
+    )}`.trim();
+
+
+  return {
+    valida: true,
+
+    estado:
+      'VIGENTE' as const,
+
+    empleado: {
+      codigo:
+        credentialEmployeeCode(
+          usuarioId
+        ),
+
+      nombre:
+        nombreCompleto,
+
+      rol:
+        safeText(
+          user.rol_nombre,
+          'Empleado'
+        ),
+    },
 
     vigencia:
       vigencia.toISOString(),

@@ -9,6 +9,7 @@ export async function findUserDocumentData(usuarioId: number) {
         u.apellido,
         u.correo,
         u.rol_id,
+        u.activo,
         u.foto_perfil_url,
         u.credencial_url,
         u.telefono,

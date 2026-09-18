@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import {
   generarContratoPdf,
   generarCredencialImagen,
+  verificarCredencialToken,
   guardarFotoPerfil,
 } from './documentos.service.js';
 import { registrarActividadEmpleado } from '../actividad/actividad.service.js';
@@ -16,6 +17,29 @@ function getActorId(req: Request) {
     ) || undefined
   );
 }
+
+export async function verificarCredencialController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const result =
+      await verificarCredencialToken(
+        String(
+          req.params.token || ''
+        )
+      );
+
+    return res
+      .status(200)
+      .json(result);
+
+  } catch (e) {
+    next(e);
+  }
+}
+
 
 export async function uploadFotoPerfilController(
   req: Request,

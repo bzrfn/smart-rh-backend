@@ -11,12 +11,27 @@ import {
 import {
   generarContratoPdfController,
   generarCredencialImagenController,
+  verificarCredencialController,
   uploadFotoPerfilController,
 } from './documentos.controller.js';
 
 
 export const documentosRoutes =
   Router();
+
+
+/**
+ * VERIFICACION PUBLICA DE CREDENCIAL
+ *
+ * No requiere JWT.
+ *
+ * El token es aleatorio y el endpoint solamente
+ * devuelve datos laborales mínimos.
+ */
+documentosRoutes.get(
+  '/credenciales/verificar/:token',
+  verificarCredencialController
+);
 
 
 /**
