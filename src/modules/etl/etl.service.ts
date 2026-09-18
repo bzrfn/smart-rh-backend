@@ -266,20 +266,21 @@ export class ETLService {
           const [results] =
             await pool.query(`
               SELECT
-                id,
-                nombre,
-                apellido,
-                correo,
-                rol_id,
-                activo,
-                dias_vacaciones_disponibles,
-                foto_perfil_url,
-                CASE
-                  WHEN rol_id = 1 THEN 'Admin'
-                  WHEN rol_id = 2 THEN 'Empleado'
-                  ELSE CONCAT('Rol ', rol_id)
-                END AS rol
-              FROM usuarios
+                u.id,
+                u.nombre,
+                u.apellido,
+                u.correo,
+                u.rol_id,
+                u.activo,
+                u.dias_vacaciones_disponibles,
+                u.foto_perfil_url,
+                COALESCE(
+                  NULLIF(TRIM(r.nombre), ''),
+                  CONCAT('Rol ', u.rol_id)
+                ) AS rol
+              FROM usuarios u
+              LEFT JOIN roles r
+                ON r.id = u.rol_id
             `);
 
 
@@ -496,20 +497,21 @@ export class ETLService {
     const [usuariosResult] =
       await pool.query(`
         SELECT
-          id,
-          nombre,
-          apellido,
-          correo,
-          rol_id,
-          activo,
-          dias_vacaciones_disponibles,
-          foto_perfil_url,
-          CASE
-            WHEN rol_id = 1 THEN 'Admin'
-            WHEN rol_id = 2 THEN 'Empleado'
-            ELSE CONCAT('Rol ', rol_id)
-          END AS rol
-        FROM usuarios
+          u.id,
+          u.nombre,
+          u.apellido,
+          u.correo,
+          u.rol_id,
+          u.activo,
+          u.dias_vacaciones_disponibles,
+          u.foto_perfil_url,
+          COALESCE(
+            NULLIF(TRIM(r.nombre), ''),
+            CONCAT('Rol ', u.rol_id)
+          ) AS rol
+        FROM usuarios u
+        LEFT JOIN roles r
+          ON r.id = u.rol_id
       `);
 
 
