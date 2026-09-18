@@ -8,14 +8,22 @@ import {
 
 import {
   createUser,
+  findRoleNameById,
   findUserById,
   listUsers,
   roleExists,
   setUserActive,
+  setUserActiveWithAdminLock,
   setUserVacationDays,
-  softDeleteUser,
+  softDeleteUserWithAdminLock,
   updateUser,
+  updateUserWithAdminLock,
 } from './users.repository.js';
+
+import {
+  assertAdminLockoutProtection,
+  isAdminRole,
+} from './users.security.js';
 
 import {
   validateActiveValue,
@@ -106,7 +114,8 @@ export async function addUser(
 
 export async function editUser(
   rawId: unknown,
-  payload: unknown
+  payload: unknown,
+  rawActorId?: unknown
 ) {
   const id =
     validateUserId(
@@ -132,7 +141,67 @@ export async function editUser(
     data.rol_id
   );
 
+  const nextRole =
+    await findRoleNameById(
+      data.rol_id
+    );
+
+  const actorId =
+    rawActorId === undefined
+      ? null
+      : validateUserId(
+          rawActorId
+        );
+
   try {
+    /*
+     * Si el rol destino NO es admin, la actualización
+     * podría retirar privilegios administrativos.
+     *
+     * La validación y el UPDATE se realizan dentro
+     * de una misma transacción con bloqueo.
+     */
+    if (
+      !isAdminRole(
+        nextRole
+      )
+    ) {
+      await updateUserWithAdminLock(
+        id,
+        data,
+        ({
+          target,
+          activeAdminCount,
+        }) => {
+          if (!target) {
+            throw new AppError(
+              'Usuario no encontrado',
+              404
+            );
+          }
+
+          assertAdminLockoutProtection({
+            actorUserId:
+              actorId,
+            targetUserId:
+              id,
+            targetRole:
+              target.role,
+            targetActive:
+              Boolean(
+                target.activo
+              ),
+            activeAdminCount,
+            operation:
+              'demote',
+            nextRole,
+          });
+        }
+      );
+
+      return;
+    }
+
     await updateUser(
       id,
       data
@@ -146,7 +215,8 @@ export async function editUser(
 
 export async function toggleUser(
   rawId: unknown,
-  rawActive: unknown
+  rawActive: unknown,
+  rawActorId?: unknown
 ) {
   const id =
     validateUserId(
@@ -168,9 +238,52 @@ export async function toggleUser(
     );
   }
 
-  await setUserActive(
+  if (active) {
+    await setUserActive(
+      id,
+      true
+    );
+
+    return;
+  }
+
+  const actorId =
+    rawActorId === undefined
+      ? null
+      : validateUserId(
+          rawActorId
+        );
+
+  await setUserActiveWithAdminLock(
     id,
-    active
+    false,
+    ({
+      target,
+      activeAdminCount,
+    }) => {
+      if (!target) {
+        throw new AppError(
+          'Usuario no encontrado',
+          404
+        );
+      }
+
+      assertAdminLockoutProtection({
+        actorUserId:
+          actorId,
+        targetUserId:
+          id,
+        targetRole:
+          target.role,
+        targetActive:
+          Boolean(
+            target.activo
+          ),
+        activeAdminCount,
+        operation:
+          'deactivate',
+      });
+    }
   );
 }
 
@@ -205,7 +318,8 @@ export async function updateUserVacationDays(
 }
 
 export async function deleteUser(
-  rawId: unknown
+  rawId: unknown,
+  rawActorId?: unknown
 ) {
   const id =
     validateUserId(
@@ -222,7 +336,41 @@ export async function deleteUser(
     );
   }
 
-  await softDeleteUser(
-    id
+  const actorId =
+    rawActorId === undefined
+      ? null
+      : validateUserId(
+          rawActorId
+        );
+
+  await softDeleteUserWithAdminLock(
+    id,
+    ({
+      target,
+      activeAdminCount,
+    }) => {
+      if (!target) {
+        throw new AppError(
+          'Usuario no encontrado',
+          404
+        );
+      }
+
+      assertAdminLockoutProtection({
+        actorUserId:
+          actorId,
+        targetUserId:
+          id,
+        targetRole:
+          target.role,
+        targetActive:
+          Boolean(
+            target.activo
+          ),
+        activeAdminCount,
+        operation:
+          'delete',
+      });
+    }
   );
 }

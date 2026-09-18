@@ -18,6 +18,10 @@ import {
   resolveAuthContext,
 } from '../../src/middlewares/authJwt.js';
 
+import {
+  assertAdminLockoutProtection,
+} from '../../src/modules/users/users.security.js';
+
 describe(
   'Users and permissions hardening',
   () => {
@@ -319,6 +323,136 @@ describe(
           userId: 10,
           role: 'empleado',
         });
+      }
+    );
+  }
+);
+
+
+describe(
+  'Admin self-protection and last-active-admin',
+  () => {
+    test(
+      'bloquea que un admin se desactive a sí mismo',
+      () => {
+        expect(() =>
+          assertAdminLockoutProtection({
+            actorUserId: 1,
+            targetUserId: 1,
+            targetRole: 'admin',
+            targetActive: true,
+            activeAdminCount: 2,
+            operation: 'deactivate',
+          })
+        ).toThrow(
+          'No puedes desactivar tu propia cuenta de administrador'
+        );
+      }
+    );
+
+    test(
+      'bloquea que un admin se elimine a sí mismo',
+      () => {
+        expect(() =>
+          assertAdminLockoutProtection({
+            actorUserId: 1,
+            targetUserId: 1,
+            targetRole: 'admin',
+            targetActive: true,
+            activeAdminCount: 2,
+            operation: 'delete',
+          })
+        ).toThrow(
+          'No puedes eliminar tu propia cuenta de administrador'
+        );
+      }
+    );
+
+    test(
+      'bloquea que un admin retire su propio rol admin',
+      () => {
+        expect(() =>
+          assertAdminLockoutProtection({
+            actorUserId: 1,
+            targetUserId: 1,
+            targetRole: 'admin',
+            targetActive: true,
+            activeAdminCount: 2,
+            operation: 'demote',
+            nextRole: 'empleado',
+          })
+        ).toThrow(
+          'No puedes retirar tu propio rol de administrador'
+        );
+      }
+    );
+
+    test(
+      'bloquea desactivar al último administrador activo',
+      () => {
+        expect(() =>
+          assertAdminLockoutProtection({
+            actorUserId: 2,
+            targetUserId: 1,
+            targetRole: 'admin',
+            targetActive: true,
+            activeAdminCount: 1,
+            operation: 'deactivate',
+          })
+        ).toThrow(
+          'No se puede modificar el acceso del último administrador activo'
+        );
+      }
+    );
+
+    test(
+      'bloquea degradar al último administrador activo',
+      () => {
+        expect(() =>
+          assertAdminLockoutProtection({
+            actorUserId: 2,
+            targetUserId: 1,
+            targetRole: 'admin',
+            targetActive: true,
+            activeAdminCount: 1,
+            operation: 'demote',
+            nextRole: 'empleado',
+          })
+        ).toThrow(
+          'No se puede modificar el acceso del último administrador activo'
+        );
+      }
+    );
+
+    test(
+      'permite modificar otro admin cuando existen varios admins activos',
+      () => {
+        expect(() =>
+          assertAdminLockoutProtection({
+            actorUserId: 2,
+            targetUserId: 1,
+            targetRole: 'admin',
+            targetActive: true,
+            activeAdminCount: 2,
+            operation: 'deactivate',
+          })
+        ).not.toThrow();
+      }
+    );
+
+    test(
+      'no aplica bloqueo de admin a un empleado',
+      () => {
+        expect(() =>
+          assertAdminLockoutProtection({
+            actorUserId: 1,
+            targetUserId: 2,
+            targetRole: 'empleado',
+            targetActive: true,
+            activeAdminCount: 1,
+            operation: 'deactivate',
+          })
+        ).not.toThrow();
       }
     );
   }

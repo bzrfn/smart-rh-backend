@@ -75,22 +75,39 @@ export async function createUserController(req: Request, res: Response, next: Ne
   }
 }
 
-export async function updateUserController(req: Request, res: Response, next: NextFunction) {
+export async function updateUserController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    await editUser(Number(req.params.id), {
-      nombre: req.body?.nombre,
-      apellido: req.body?.apellido,
-      correo: req.body?.correo,
-      rol_id: req.body?.rol_id,
-      telefono: req.body?.telefono || null,
-      direccion: req.body?.direccion || null,
-      fecha_ingreso: req.body?.fecha_ingreso || null,
-      dias_vacaciones_disponibles: req.body?.dias_vacaciones_disponibles ?? 12,
-    });
+    await editUser(
+      Number(req.params.id),
+      {
+        nombre: req.body?.nombre,
+        apellido: req.body?.apellido,
+        correo: req.body?.correo,
+        rol_id: req.body?.rol_id,
+        telefono:
+          req.body?.telefono || null,
+        direccion:
+          req.body?.direccion || null,
+        fecha_ingreso:
+          req.body?.fecha_ingreso || null,
+        dias_vacaciones_disponibles:
+          req.body?.dias_vacaciones_disponibles ??
+          12,
+      },
+      Number(
+        (req as any)
+          .auth?.userId
+      )
+    );
 
     res.json({
       ok: true,
-      message: 'Usuario actualizado correctamente',
+      message:
+        'Usuario actualizado correctamente',
     });
   } catch (e) {
     next(e);
@@ -99,7 +116,11 @@ export async function updateUserController(req: Request, res: Response, next: Ne
 
 export async function setActiveController(req: Request, res: Response, next: NextFunction) {
   try {
-    await toggleUser(Number(req.params.id), req.body?.activo);
+    await toggleUser(
+      Number(req.params.id),
+      req.body?.activo,
+      Number((req as any).auth?.userId)
+    );
     res.json({ ok: true });
   } catch (e) {
     next(e);
@@ -124,7 +145,10 @@ export async function setVacationDaysController(req: Request, res: Response, nex
 
 export async function deleteUserController(req: Request, res: Response, next: NextFunction) {
   try {
-    await deleteUser(Number(req.params.id));
+    await deleteUser(
+      Number(req.params.id),
+      Number((req as any).auth?.userId)
+    );
 
     res.json({
       ok: true,
