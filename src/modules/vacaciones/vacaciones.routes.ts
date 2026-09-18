@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authJwt } from '../../middlewares/authJwt.js';
 import { requireRole } from '../../middlewares/requireRole.js';
+import { requireModule } from '../../middlewares/requireModule.js';
 import {
   approve,
   create,
@@ -11,8 +12,39 @@ import {
 
 export const vacacionesRoutes = Router();
 
-vacacionesRoutes.get('/', authJwt, requireRole('admin'), list);
-vacacionesRoutes.get('/me', authJwt, requireRole('empleado', 'admin'), listMine);
-vacacionesRoutes.post('/', authJwt, requireRole('empleado', 'admin'), create);
-vacacionesRoutes.patch('/:id/approve', authJwt, requireRole('admin'), approve);
-vacacionesRoutes.patch('/:id/reject', authJwt, requireRole('admin'), reject);
+vacacionesRoutes.get(
+  '/',
+  authJwt,
+  requireRole('admin'),
+  list
+);
+
+vacacionesRoutes.get(
+  '/me',
+  authJwt,
+  requireRole('empleado', 'admin'),
+  requireModule('vacaciones'),
+  listMine
+);
+
+vacacionesRoutes.post(
+  '/',
+  authJwt,
+  requireRole('empleado', 'admin'),
+  requireModule('vacaciones'),
+  create
+);
+
+vacacionesRoutes.patch(
+  '/:id/approve',
+  authJwt,
+  requireRole('admin'),
+  approve
+);
+
+vacacionesRoutes.patch(
+  '/:id/reject',
+  authJwt,
+  requireRole('admin'),
+  reject
+);

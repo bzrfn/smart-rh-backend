@@ -1,36 +1,210 @@
-import { getPermisosByUserId, updatePermisos } from './permisos.repository.js';
+import {
+  getPermisosByUserId,
+  updatePermisos,
+} from './permisos.repository.js';
+
+import {
+  isModuloPermiso,
+  MODULOS_PERMITIDOS,
+  ModuloPermiso,
+  PermisosUsuario,
+} from './permisos.types.js';
+
+import {
+  findUserById,
+} from '../users/users.repository.js';
+
 import { AppError } from '../../utils/AppError.js';
 
-export async function getMyPermisos(userId: number) {
-  const rows = await getPermisosByUserId(userId);
+function validateUserId(
+  value: unknown
+): number {
+  const id = Number(value);
 
-  const permisos: Record<string, boolean> = {};
+  if (
+    !Number.isInteger(id) ||
+    id <= 0
+  ) {
+    throw new AppError(
+      'ID de usuario inválido',
+      400
+    );
+  }
 
-  for (const r of rows) {
-    permisos[r.modulo] = Boolean(r.habilitado);
+  return id;
+}
+
+function createDefaultPermisos():
+  Record<ModuloPermiso, boolean> {
+  return {
+    asistencia: false,
+    contratos: false,
+    nomina: false,
+    vacaciones: false,
+  };
+}
+
+function mapPermisos(
+  rows: {
+    modulo: string;
+    habilitado: number;
+  }[]
+) {
+  const permisos =
+    createDefaultPermisos();
+
+  for (const row of rows) {
+    if (
+      isModuloPermiso(
+        row.modulo
+      )
+    ) {
+      permisos[row.modulo] =
+        Boolean(
+          row.habilitado
+        );
+    }
   }
 
   return permisos;
 }
 
-export async function getUserPermisos(userId: number) {
-  const rows = await getPermisosByUserId(userId);
-
-  const permisos: Record<string, boolean> = {};
-
-  for (const r of rows) {
-    permisos[r.modulo] = Boolean(r.habilitado);
+export function validatePermissionsPayload(
+  payload: unknown
+): PermisosUsuario {
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    Array.isArray(payload)
+  ) {
+    throw new AppError(
+      'Formato de permisos inválido',
+      400
+    );
   }
 
-  return permisos;
-}
+  const entries =
+    Object.entries(
+      payload as Record<string, unknown>
+    );
 
-export async function updateUserPermisos(userId: number, permisos: Record<string, boolean>) {
-  if (!permisos || typeof permisos !== 'object') {
-    throw new AppError('Formato de permisos inválido', 400);
+  if (
+    entries.length === 0
+  ) {
+    throw new AppError(
+      'Debes indicar al menos un permiso',
+      400
+    );
   }
 
-  await updatePermisos(userId, permisos);
+  const result:
+    PermisosUsuario = {};
 
-  return { message: 'Permisos actualizados correctamente' };
+  for (
+    const [
+      modulo,
+      habilitado,
+    ] of entries
+  ) {
+    if (
+      !isModuloPermiso(
+        modulo
+      )
+    ) {
+      throw new AppError(
+        `Módulo no permitido: ${modulo}`,
+        400
+      );
+    }
+
+    if (
+      typeof habilitado !==
+      'boolean'
+    ) {
+      throw new AppError(
+        `El permiso ${modulo} debe ser booleano`,
+        400
+      );
+    }
+
+    result[modulo] =
+      habilitado;
+  }
+
+  return result;
 }
+
+export async function getMyPermisos(
+  userId: number
+) {
+  const id =
+    validateUserId(userId);
+
+  const rows =
+    await getPermisosByUserId(
+      id
+    );
+
+  return mapPermisos(rows);
+}
+
+export async function getUserPermisos(
+  userId: number
+) {
+  const id =
+    validateUserId(userId);
+
+  const user =
+    await findUserById(id);
+
+  if (!user) {
+    throw new AppError(
+      'Usuario no encontrado',
+      404
+    );
+  }
+
+  const rows =
+    await getPermisosByUserId(
+      id
+    );
+
+  return mapPermisos(rows);
+}
+
+export async function updateUserPermisos(
+  userId: number,
+  payload: unknown
+) {
+  const id =
+    validateUserId(userId);
+
+  const user =
+    await findUserById(id);
+
+  if (!user) {
+    throw new AppError(
+      'Usuario no encontrado',
+      404
+    );
+  }
+
+  const permisos =
+    validatePermissionsPayload(
+      payload
+    );
+
+  await updatePermisos(
+    id,
+    permisos
+  );
+
+  return {
+    message:
+      'Permisos actualizados correctamente',
+  };
+}
+
+export {
+  MODULOS_PERMITIDOS,
+};

@@ -99,7 +99,7 @@ export async function updateUserController(req: Request, res: Response, next: Ne
 
 export async function setActiveController(req: Request, res: Response, next: NextFunction) {
   try {
-    await toggleUser(Number(req.params.id), Boolean(req.body?.activo));
+    await toggleUser(Number(req.params.id), req.body?.activo);
     res.json({ ok: true });
   } catch (e) {
     next(e);
