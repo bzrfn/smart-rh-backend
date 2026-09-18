@@ -594,3 +594,79 @@ export async function consumeAdminAccessChallenge(
     connection.release();
   }
 }
+
+
+export type ActiveAdminAccessChallenge = {
+  challengeId: string;
+
+  secondsElapsed: number;
+};
+
+
+export async function findLatestActiveAdminChallenge(
+  adminUserId: number
+): Promise<ActiveAdminAccessChallenge | null> {
+  const [
+    rows,
+  ] =
+    await pool.query(
+      `
+        SELECT
+          challenge_id,
+
+          TIMESTAMPDIFF(
+            SECOND,
+            created_at,
+            NOW()
+          ) AS seconds_elapsed
+
+        FROM admin_access_challenges
+
+        WHERE
+          admin_user_id = ?
+
+          AND used_at IS NULL
+
+          AND expires_at > NOW()
+
+          AND attempts <
+            max_attempts
+
+        ORDER BY
+          created_at DESC
+
+        LIMIT 1
+      `,
+      [
+        adminUserId,
+      ]
+    );
+
+  const row =
+    (
+      rows as Array<{
+        challenge_id:
+          string;
+
+        seconds_elapsed:
+          number | string;
+      }>
+    )[0];
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    challengeId:
+      String(
+        row.challenge_id
+      ),
+
+    secondsElapsed:
+      Number(
+        row.seconds_elapsed ||
+        0
+      ),
+  };
+}
