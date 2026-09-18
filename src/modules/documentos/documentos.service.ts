@@ -4,6 +4,10 @@ import sharp from 'sharp';
 
 import QRCode from 'qrcode';
 
+import {
+  addOneCalendarMonthClamped,
+} from './credential.utils.js';
+
 import { AppError } from '../../utils/AppError.js';
 
 import {
@@ -27,6 +31,7 @@ import {
 } from './documentos.model.js';
 
 import {
+  findActiveContratoByUser,
   findLatestContratoByUser,
   findUserDocumentData,
   setContratoPdf,
@@ -766,14 +771,14 @@ export async function generarCredencialImagen(
 
 
   const contrato =
-    await findLatestContratoByUser(
+    await findActiveContratoByUser(
       usuarioId
     );
 
 
   if (!contrato) {
     throw new AppError(
-      'El usuario no tiene contrato registrado',
+      'El usuario no tiene contrato activo',
       404
     );
   }
@@ -816,12 +821,9 @@ export async function generarCredencialImagen(
 
 
   const vigencia =
-    new Date();
-
-
-  vigencia.setMonth(
-    vigencia.getMonth() + 1
-  );
+    addOneCalendarMonthClamped(
+      new Date()
+    );
 
 
   // ----------------------------------------------------------

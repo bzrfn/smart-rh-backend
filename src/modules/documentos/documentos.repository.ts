@@ -41,6 +41,28 @@ export async function findLatestContratoByUser(usuarioId: number) {
   return (rows as any[])[0] || null;
 }
 
+export async function findActiveContratoByUser(
+  usuarioId: number
+) {
+  const [rows] =
+    await pool.query(
+      `
+        SELECT *
+        FROM contratos
+        WHERE usuario_id = ?
+          AND estado = 'activo'
+        ORDER BY id DESC
+        LIMIT 1
+      `,
+      [usuarioId]
+    );
+
+  return (
+    rows as any[]
+  )[0] || null;
+}
+
+
 export async function setUserFotoPerfil(usuarioId: number, fotoUrl: string) {
   await pool.query(
     `
