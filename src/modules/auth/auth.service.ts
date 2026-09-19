@@ -1,4 +1,9 @@
 import {
+  resolvePublicRegistrationRoleId,
+} from './publicRegistration.policy.js';
+
+
+import {
   createUser,
   findUserByEmail,
   findUserById,
@@ -312,7 +317,10 @@ export async function register(data: {
     apellido: data.apellido,
     correo: data.correo,
     contrasena: hashed,
-    rol_id: data.rol_id,
+    rol_id:
+      resolvePublicRegistrationRoleId(
+        data.rol_id
+      ),
     telefono: data.telefono || null,
     direccion: data.direccion || null,
     fecha_ingreso: data.fecha_ingreso || null,
