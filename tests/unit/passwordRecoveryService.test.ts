@@ -55,6 +55,12 @@ function makeDeps(
           0
       ),
 
+    countRecentIpChallenges:
+      jest.fn(
+        async () =>
+          0
+      ),
+
     invalidateActiveChallenges:
       jest.fn(
         async () =>

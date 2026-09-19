@@ -30,6 +30,7 @@ import {
 import {
   consumePasswordResetChallenge,
   countRecentPasswordResetChallenges,
+  countRecentPasswordResetIpChallenges,
   findEligiblePasswordRecoveryUserByEmail,
   findLatestActivePasswordResetChallenge,
   invalidatePasswordResetChallenge,
@@ -51,6 +52,9 @@ export const PASSWORD_RECOVERY_RATE_WINDOW_MINUTES =
 
 export const PASSWORD_RECOVERY_MAX_PER_USER_WINDOW =
   3;
+
+export const PASSWORD_RECOVERY_MAX_PER_IP_WINDOW =
+  20;
 
 
 const PASSWORD_RECOVERY_PUBLIC_MESSAGE =
@@ -76,6 +80,9 @@ export type PasswordRecoveryDependencies = {
 
   countRecentChallenges:
     typeof countRecentPasswordResetChallenges;
+
+  countRecentIpChallenges:
+    typeof countRecentPasswordResetIpChallenges;
 
   invalidateActiveChallenges:
     typeof invalidatePasswordResetChallenge;
@@ -134,6 +141,9 @@ const defaultDependencies:
 
     countRecentChallenges:
       countRecentPasswordResetChallenges,
+
+    countRecentIpChallenges:
+      countRecentPasswordResetIpChallenges,
 
     invalidateActiveChallenges:
       invalidatePasswordResetChallenge,
@@ -310,6 +320,29 @@ export function buildPasswordRecoveryService(
     }
 
 
+    const requestIpHash =
+      deps.createIpHash(
+        ipInput
+      );
+
+
+    if (requestIpHash) {
+      const recentIpCount =
+        await deps.countRecentIpChallenges(
+          requestIpHash,
+          PASSWORD_RECOVERY_RATE_WINDOW_MINUTES
+        );
+
+
+      if (
+        recentIpCount >=
+          PASSWORD_RECOVERY_MAX_PER_IP_WINDOW
+      ) {
+        return neutralRequestResponse();
+      }
+    }
+
+
     const user =
       await deps.findEligibleUser(
         correo
@@ -362,12 +395,6 @@ export function buildPasswordRecoveryService(
         challengeId,
         code
       );
-
-    const requestIpHash =
-      deps.createIpHash(
-        ipInput
-      );
-
 
     const replaceResult =
       await deps.createChallenge({

@@ -47,6 +47,14 @@ export const app = express();
 app.disable('x-powered-by');
 
 
+// Nginx local -> Express.
+// Solo se confia por defecto en proxies de loopback.
+app.set(
+  'trust proxy',
+  env.trustProxy
+);
+
+
 // ============================================================
 // ESTRUCTURA DE STORAGE
 // ============================================================

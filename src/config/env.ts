@@ -29,6 +29,10 @@ export const env = {
       4000
     ),
 
+  trustProxy:
+    process.env.TRUST_PROXY ||
+    'loopback',
+
 
   // ==========================================================
   // ZONA HORARIA DE NEGOCIO
