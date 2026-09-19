@@ -1,4 +1,8 @@
 import {
+  performance,
+} from 'node:perf_hooks';
+
+import {
   AppError,
 } from '../../utils/AppError.js';
 
@@ -56,6 +60,9 @@ export const PASSWORD_RECOVERY_MAX_PER_USER_WINDOW =
 export const PASSWORD_RECOVERY_MAX_PER_IP_WINDOW =
   20;
 
+export const PASSWORD_RECOVERY_MIN_RESPONSE_MS =
+  750;
+
 
 const PASSWORD_RECOVERY_PUBLIC_MESSAGE =
   'Si existe una cuenta asociada a ese correo, se enviará un código de recuperación.';
@@ -104,6 +111,12 @@ export type PasswordRecoveryDependencies = {
 
   createIpHash:
     typeof createPasswordRecoveryIpHash;
+
+  waitForNeutralResponse?:
+    (
+      startedAtMs:
+        number
+    ) => Promise<void>;
 
   isValidCode:
     typeof isValidPasswordRecoveryCode;
@@ -165,6 +178,9 @@ const defaultDependencies:
 
     createIpHash:
       createPasswordRecoveryIpHash,
+
+    waitForNeutralResponse:
+      waitForPasswordRecoveryMinimumDuration,
 
     isValidCode:
       isValidPasswordRecoveryCode,
@@ -237,6 +253,103 @@ string {
 }
 
 
+export async function waitForPasswordRecoveryMinimumDuration(
+  startedAtMs:
+    number,
+  options: {
+    minDurationMs?:
+      number;
+
+    nowMs?:
+      () => number;
+
+    sleep?:
+      (
+        milliseconds:
+          number
+      ) => Promise<void>;
+  } = {}
+):
+Promise<void> {
+  const minDurationMs =
+    Math.max(
+      0,
+      Number(
+        options.minDurationMs ??
+        PASSWORD_RECOVERY_MIN_RESPONSE_MS
+      )
+    );
+
+  const nowMs =
+    options.nowMs ??
+    (() =>
+      performance.now()
+    );
+
+  const sleep =
+    options.sleep ??
+    (async (
+      milliseconds:
+        number
+    ) => {
+      await new Promise<void>(
+        (
+          resolve
+        ) => {
+          setTimeout(
+            resolve,
+            milliseconds
+          );
+        }
+      );
+    });
+
+
+  const elapsed =
+    Math.max(
+      0,
+      nowMs() -
+      startedAtMs
+    );
+
+  const remaining =
+    minDurationMs -
+    elapsed;
+
+
+  if (
+    remaining <=
+    0
+  ) {
+    return;
+  }
+
+
+  await sleep(
+    remaining
+  );
+}
+
+
+async function neutralRequestResponseWithTiming(
+  deps:
+    PasswordRecoveryDependencies,
+  startedAtMs:
+    number
+) {
+  if (
+    deps.waitForNeutralResponse
+  ) {
+    await deps.waitForNeutralResponse(
+      startedAtMs
+    );
+  }
+
+
+  return neutralRequestResponse();
+}
+
+
 function neutralRequestResponse() {
   return {
     accepted:
@@ -305,6 +418,9 @@ export function buildPasswordRecoveryService(
     correoInput: unknown,
     ipInput?: unknown
   ) {
+    const requestStartedAt =
+      performance.now();
+
     const correo =
       normalizeEmail(
         correoInput
@@ -316,7 +432,10 @@ export function buildPasswordRecoveryService(
         correo
       )
     ) {
-      return neutralRequestResponse();
+      return await neutralRequestResponseWithTiming(
+        deps,
+        requestStartedAt
+      );
     }
 
 
@@ -338,7 +457,10 @@ export function buildPasswordRecoveryService(
         recentIpCount >=
           PASSWORD_RECOVERY_MAX_PER_IP_WINDOW
       ) {
-        return neutralRequestResponse();
+        return await neutralRequestResponseWithTiming(
+        deps,
+        requestStartedAt
+      );
       }
     }
 
@@ -350,7 +472,10 @@ export function buildPasswordRecoveryService(
 
 
     if (!user) {
-      return neutralRequestResponse();
+      return await neutralRequestResponseWithTiming(
+        deps,
+        requestStartedAt
+      );
     }
 
 
@@ -365,7 +490,10 @@ export function buildPasswordRecoveryService(
       active.secondsElapsed <
         PASSWORD_RECOVERY_COOLDOWN_SECONDS
     ) {
-      return neutralRequestResponse();
+      return await neutralRequestResponseWithTiming(
+        deps,
+        requestStartedAt
+      );
     }
 
 
@@ -380,7 +508,10 @@ export function buildPasswordRecoveryService(
       recentCount >=
       PASSWORD_RECOVERY_MAX_PER_USER_WINDOW
     ) {
-      return neutralRequestResponse();
+      return await neutralRequestResponseWithTiming(
+        deps,
+        requestStartedAt
+      );
     }
 
 
@@ -433,7 +564,10 @@ export function buildPasswordRecoveryService(
       replaceResult.status !==
         'created'
     ) {
-      return neutralRequestResponse();
+      return await neutralRequestResponseWithTiming(
+        deps,
+        requestStartedAt
+      );
     }
 
 
@@ -479,7 +613,10 @@ export function buildPasswordRecoveryService(
         }
       );
 
-      return neutralRequestResponse();
+      return await neutralRequestResponseWithTiming(
+        deps,
+        requestStartedAt
+      );
     }
 
 
@@ -515,7 +652,10 @@ export function buildPasswordRecoveryService(
     );
 
 
-    return neutralRequestResponse();
+    return await neutralRequestResponseWithTiming(
+        deps,
+        requestStartedAt
+      );
   }
 
 
