@@ -1,6 +1,11 @@
 import { Router } from 'express';
 
 import {
+  requireAdminAccess,
+} from '../../middlewares/requireAdminAccess.js';
+
+
+import {
   adminAccessRoutes,
 } from './adminAccess.routes.js';
 
@@ -10,6 +15,7 @@ import {
 
 import {
   forgotPasswordController,
+  adminLoginController,
   loginController,
   registerController,
   resetPasswordController,
@@ -31,6 +37,12 @@ authRoutes.use(
 
 
 authRoutes.post('/login', loginController);
+
+authRoutes.post(
+  '/admin-login',
+  requireAdminAccess,
+  adminLoginController
+);
 authRoutes.post('/verify-login-code', verifyLoginCodeController);
 
 authRoutes.post('/register', registerController);

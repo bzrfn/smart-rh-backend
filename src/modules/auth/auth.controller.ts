@@ -1,3 +1,11 @@
+import {
+  type AdminAccessRequest,
+} from '../../middlewares/requireAdminAccess.js';
+
+import {
+  AppError,
+} from '../../utils/AppError.js';
+
 import { Request, Response, NextFunction } from 'express';
 import {
   validateForgotPassword,
@@ -34,6 +42,70 @@ export async function loginController(
         correo,
         contrasena,
         req.ip
+      );
+
+    res.json({
+      ok: true,
+      ...data,
+    });
+
+  } catch (e) {
+    next(e);
+  }
+}
+
+
+export async function adminLoginController(
+  req: AdminAccessRequest,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    if (!req.adminAccess) {
+      throw new AppError(
+        'Acceso administrativo requerido',
+        401
+      );
+    }
+
+    const {
+      correo,
+      contrasena,
+    } =
+      validateLogin(
+        req.body
+      );
+
+    const sponsorEmail =
+      String(
+        req.adminAccess.sponsorEmail ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+    if (
+      sponsorEmail !==
+      correo
+    ) {
+      throw new AppError(
+        'Acceso administrativo invalido',
+        401
+      );
+    }
+
+    const data =
+      await login(
+        correo,
+        contrasena,
+        req.ip,
+        {
+          sponsorAdminId:
+            req.adminAccess.sponsorAdminId,
+
+          sponsorEmail:
+            req.adminAccess.sponsorEmail,
+        }
       );
 
     res.json({

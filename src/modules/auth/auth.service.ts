@@ -112,10 +112,17 @@ async function registrarLoginExitoso(
 }
 
 
+export type AdminLoginAccessContext = {
+  sponsorAdminId: number;
+  sponsorEmail: string;
+};
+
+
 export async function login(
   correo: string,
   contrasena: string,
-  requestIp?: unknown
+  requestIp?: unknown,
+  adminAccess?: AdminLoginAccessContext
 ) {
   const u = await findUserByEmail(correo);
 
@@ -160,6 +167,74 @@ export async function login(
 
     throw new AppError('Usuario inactivo', 403);
   }
+
+  const isAdminAccount =
+    String(
+      u.rol_nombre ||
+      ''
+    )
+      .trim()
+      .toLowerCase() ===
+    'admin';
+
+
+  if (
+    adminAccess &&
+    !isAdminAccount
+  ) {
+    throw new AppError(
+      'Acceso administrativo invalido',
+      401
+    );
+  }
+
+
+  if (isAdminAccount) {
+    const sponsorId =
+      Number(
+        adminAccess?.sponsorAdminId
+      );
+
+    const sponsorEmail =
+      String(
+        adminAccess?.sponsorEmail ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+    const userEmail =
+      String(
+        u.correo ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+    if (
+      !adminAccess ||
+      !Number.isInteger(
+        sponsorId
+      ) ||
+      sponsorId !==
+        Number(
+          u.id
+        ) ||
+      sponsorEmail !==
+        userEmail
+    ) {
+      /*
+       * Respuesta generica:
+       * no revelar desde /auth/login
+       * que el correo pertenece a un admin.
+       */
+      throw new AppError(
+        'Credenciales incorrectas',
+        401
+      );
+    }
+  }
+
 
   const ok = await verifyPassword(contrasena, u.contrasena);
 
