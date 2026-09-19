@@ -82,11 +82,26 @@ export const env = {
   jwt: {
     secret:
       process.env.JWT_SECRET ||
-      'CHANGE_ME',
+      '',
 
     expiresIn:
       process.env.JWT_EXPIRES_IN ||
       '8h',
+  },
+
+
+  // ==========================================================
+  // PREAUTORIZACION ADMINISTRATIVA
+  // ==========================================================
+
+  adminAccess: {
+    jwtSecret:
+      process.env.ADMIN_ACCESS_JWT_SECRET ||
+      '',
+
+    hmacSecret:
+      process.env.ADMIN_ACCESS_HMAC_SECRET ||
+      '',
   },
 
 

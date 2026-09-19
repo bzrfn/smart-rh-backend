@@ -74,6 +74,41 @@ function isValidEmail(
 }
 
 
+function getAdminAccessJwtSecret():
+string {
+  const secret =
+    String(
+      env.adminAccess.jwtSecret ||
+      ''
+    );
+
+  const sessionSecret =
+    String(
+      env.jwt.secret ||
+      ''
+    );
+
+  const hmacSecret =
+    String(
+      env.adminAccess.hmacSecret ||
+      ''
+    );
+
+  if (
+    secret.length < 32 ||
+    secret === sessionSecret ||
+    secret === hmacSecret
+  ) {
+    throw new AppError(
+      'Configuración criptográfica administrativa inválida',
+      500
+    );
+  }
+
+  return secret;
+}
+
+
 export function signAdminAccessToken(
   input: {
     sponsorAdminId: number;
@@ -131,7 +166,7 @@ export function signAdminAccessToken(
 
   return jwt.sign(
     payload,
-    env.jwt.secret,
+    getAdminAccessJwtSecret(),
     options
   );
 }
@@ -161,7 +196,7 @@ export function verifyAdminAccessToken(
     decoded =
       jwt.verify(
         rawToken,
-        env.jwt.secret,
+        getAdminAccessJwtSecret(),
         {
           audience:
             ADMIN_ACCESS_TOKEN_AUDIENCE,

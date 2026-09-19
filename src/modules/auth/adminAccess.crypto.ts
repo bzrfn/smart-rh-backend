@@ -21,13 +21,29 @@ const ADMIN_ACCESS_CRYPTO_CONTEXT =
 function getSecret(): string {
   const secret =
     String(
+      env.adminAccess.hmacSecret ||
+      ''
+    );
+
+  const sessionSecret =
+    String(
       env.jwt.secret ||
       ''
     );
 
-  if (!secret) {
+  const adminJwtSecret =
+    String(
+      env.adminAccess.jwtSecret ||
+      ''
+    );
+
+  if (
+    secret.length < 32 ||
+    secret === sessionSecret ||
+    secret === adminJwtSecret
+  ) {
     throw new AppError(
-      'Configuración criptográfica no disponible',
+      'Configuración criptográfica administrativa inválida',
       500
     );
   }
