@@ -9,6 +9,36 @@ export type AdminInvitationEmailInput = {
 };
 
 
+function escapeHtml(
+  value: unknown
+): string {
+  return String(
+    value ||
+    ''
+  )
+    .replaceAll(
+      '&',
+      '&amp;'
+    )
+    .replaceAll(
+      '<',
+      '&lt;'
+    )
+    .replaceAll(
+      '>',
+      '&gt;'
+    )
+    .replaceAll(
+      '"',
+      '&quot;'
+    )
+    .replaceAll(
+      "'",
+      '&#039;'
+    );
+}
+
+
 export async function sendAdminInvitationEmail(
   input: AdminInvitationEmailInput
 ): Promise<void> {
@@ -108,7 +138,7 @@ export async function sendAdminInvitationEmail(
           <h2>SMART RH</h2>
 
           <p>
-            Hola ${nombre}.
+            Hola ${escapeHtml(nombre)}.
           </p>
 
           <p>
@@ -121,7 +151,7 @@ export async function sendAdminInvitationEmail(
           </p>
 
           <p>
-            <a href="${acceptUrl}">
+            <a href="${escapeHtml(acceptUrl)}">
               Activar cuenta administrativa
             </a>
           </p>
