@@ -470,6 +470,9 @@ export async function verifyAccount(correo: string, codigo: string) {
 }
 
 export async function forgotPassword(correo: string) {
+  const publicMessage =
+    'Si existe una cuenta asociada a ese correo, se enviará un código de recuperación.';
+
   const user = await findUserByEmail(correo);
 
   if (!user) {
@@ -481,7 +484,10 @@ export async function forgotPassword(correo: string) {
       resultado: 'fallido',
     });
 
-    throw new AppError('No existe una cuenta con ese correo', 404);
+    return {
+      message: publicMessage,
+      expiresInMinutes: 15,
+    };
   }
 
   const reset = createResetToken({
@@ -508,8 +514,7 @@ export async function forgotPassword(correo: string) {
   });
 
   return {
-    message: 'Código de recuperación enviado al correo',
-    resetToken: reset.token,
+    message: publicMessage,
     expiresInMinutes: reset.expiresInMinutes,
   };
 }
