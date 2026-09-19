@@ -402,12 +402,10 @@ export async function verifyAccount(correo: string, codigo: string) {
   }
 
   if (u.email_verificado) {
-    const token = signJwt({ userId: u.id, role: u.rol_nombre });
-
     return {
-      token,
-      user: buildUserResponse(u),
-      message: 'La cuenta ya estaba verificada.',
+      requiresLogin: true,
+      correo: u.correo,
+      message: 'La cuenta ya estaba verificada. Inicia sesión para continuar.',
     };
   }
 
@@ -464,12 +462,10 @@ export async function verifyAccount(correo: string, codigo: string) {
     },
   });
 
-  const token = signJwt({ userId: updated.id, role: updated.rol_nombre });
-
   return {
-    token,
-    user: buildUserResponse(updated),
-    message: 'Cuenta confirmada correctamente.',
+    requiresLogin: true,
+    correo: updated.correo,
+    message: 'Cuenta confirmada correctamente. Inicia sesión para continuar.',
   };
 }
 
