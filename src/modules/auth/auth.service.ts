@@ -16,6 +16,11 @@ import {
   completePasswordRecovery,
   requestPasswordRecovery,
 } from './passwordRecovery.service.js';
+
+import {
+  issueAdminLogin2fa,
+  verifyAdminLogin2fa,
+} from './login2fa.service.js';
 import { registrarEventoSistema } from '../eventosSistema/eventosSistema.service.js';
 import { registrarHistorialAcceso } from '../historialAccesos/historialAccesos.service.js';
 import { generarRecordatorioAsistenciaLogin } from '../notificaciones/notificaciones.service.js';
@@ -28,7 +33,6 @@ import {
 } from './auth.email-code.repository.js';
 import {
   enviarCodigoConfirmacionCuentaEmail,
-  enviarCodigoLoginEmail,
   enviarCuentaConfirmadaEmail,
 } from './auth.email.service.js';
 
@@ -53,17 +57,23 @@ function getFullName(u: any) {
   return `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.correo;
 }
 
-async function registrarLoginExitoso(u: any) {
+async function registrarLoginExitoso(
+  u: any,
+  twoFactor: boolean
+) {
   await registrarEventoSistema({
     tipo: 'LOGIN_EXITOSO',
     usuario_id: u.id,
     correo: u.correo,
     modulo: 'auth',
-    descripcion: 'Inicio de sesión exitoso con verificación 2FA.',
+    descripcion:
+      twoFactor
+        ? 'Inicio de sesión exitoso con verificación 2FA.'
+        : 'Inicio de sesión exitoso.',
     resultado: 'exitoso',
     metadata: {
       role: u.rol_nombre,
-      twoFactor: true,
+      twoFactor,
     },
   });
 
@@ -75,28 +85,38 @@ async function registrarLoginExitoso(u: any) {
     origen: 'api',
     metadata: {
       role: u.rol_nombre,
-      twoFactor: true,
+      twoFactor,
     },
   });
 
-  await generarRecordatorioAsistenciaLogin(u.id);
+  await generarRecordatorioAsistenciaLogin(
+    u.id
+  );
 
   await registrarActividadEmpleado({
     usuario_id: u.id,
     tipo: 'LOGIN_EXITOSO',
     titulo: 'Inicio de sesión',
-    descripcion: 'El usuario inició sesión correctamente en SMART RH con verificación por correo.',
+    descripcion:
+      twoFactor
+        ? 'El usuario inició sesión correctamente en SMART RH con verificación 2FA.'
+        : 'El usuario inició sesión correctamente en SMART RH.',
     modulo: 'auth',
     origen: 'mobile',
     metadata: {
       role: u.rol_nombre,
       correo: u.correo,
-      twoFactor: true,
+      twoFactor,
     },
   });
 }
 
-export async function login(correo: string, contrasena: string) {
+
+export async function login(
+  correo: string,
+  contrasena: string,
+  requestIp?: unknown
+) {
   const u = await findUserByEmail(correo);
 
   if (!u) {
@@ -195,83 +215,78 @@ export async function login(correo: string, contrasena: string) {
     };
   }
 
-  await invalidarCodigosActivos({
-    correo: u.correo,
-    tipo: 'LOGIN_2FA',
-  });
+  const normalizedRole =
+    String(
+      u.rol_nombre ||
+      ''
+    )
+      .trim()
+      .toLowerCase();
 
-  const codigo = generarCodigoEmail();
+  if (
+    normalizedRole ===
+    'admin'
+  ) {
+    const challenge =
+      await issueAdminLogin2fa(
+        {
+          id:
+            u.id,
 
-  const registroCodigo = await crearCodigoEmail({
-    usuario_id: u.id,
-    correo: u.correo,
-    codigo,
-    tipo: 'LOGIN_2FA',
-    minutosExpiracion: 10,
-  });
+          correo:
+            u.correo,
 
-  await enviarCodigoLoginEmail({
-    correo: u.correo,
-    nombre: getFullName(u),
-    codigo,
-  });
+          nombre:
+            u.nombre,
 
-  await registrarEventoSistema({
-    tipo: 'LOGIN_2FA_ENVIADO',
-    usuario_id: u.id,
-    correo: u.correo,
-    modulo: 'auth',
-    descripcion: 'Código 2FA enviado al correo del usuario.',
-    resultado: 'exitoso',
-    metadata: {
-      expiresInMinutes: registroCodigo.expiresInMinutes,
-    },
-  });
+          apellido:
+            u.apellido,
 
-  return {
-    requires2FA: true,
-    correo: u.correo,
-    expiresInMinutes: registroCodigo.expiresInMinutes,
-    message: 'Código de acceso enviado al correo.',
-  };
-}
+          role:
+            u.rol_nombre,
 
-export async function verifyLoginCode(correo: string, codigo: string) {
-  if (!correo?.trim() || !codigo?.trim()) {
-    throw new AppError('Correo y código son obligatorios', 400);
-  }
+          sessionVersion:
+            Number(
+              u.session_version
+            ),
+        },
+        requestIp
+      );
 
-  const u = await findUserByEmail(correo);
-
-  if (!u) {
-    throw new AppError('No existe una cuenta con ese correo', 404);
-  }
-
-  if (!u.activo) {
-    throw new AppError('Usuario inactivo', 403);
-  }
-
-  if (!u.email_verificado) {
-    throw new AppError('La cuenta aún no está verificada', 403);
-  }
-
-  const entry = await consumirCodigoEmail({
-    correo: u.correo,
-    codigo: codigo.trim(),
-    tipo: 'LOGIN_2FA',
-  });
-
-  if (!entry) {
     await registrarEventoSistema({
-      tipo: 'LOGIN_2FA_FALLIDO',
-      usuario_id: u.id,
-      correo: u.correo,
-      modulo: 'auth',
-      descripcion: 'Código 2FA inválido o expirado.',
-      resultado: 'fallido',
+      tipo:
+        'LOGIN_2FA_REQUERIDO',
+
+      usuario_id:
+        u.id,
+
+      correo:
+        u.correo,
+
+      modulo:
+        'auth',
+
+      descripcion:
+        challenge.reused
+          ? 'Inicio administrativo pendiente de un código 2FA previamente enviado.'
+          : 'Código 2FA administrativo enviado para completar el inicio de sesión.',
+
+      resultado:
+        'exitoso',
+
+      metadata: {
+        role:
+          u.rol_nombre,
+
+        expiresInMinutes:
+          challenge.expiresInMinutes,
+
+        reused:
+          challenge.reused,
+      },
     });
 
-    throw new AppError('Código inválido o expirado', 400);
+    return challenge;
   }
 
   const token =
@@ -288,13 +303,77 @@ export async function verifyLoginCode(correo: string, codigo: string) {
         ),
     });
 
-  await registrarLoginExitoso(u);
+  await registrarLoginExitoso(
+    u,
+    false
+  );
 
   return {
     token,
-    user: buildUserResponse(u),
+
+    user:
+      buildUserResponse(
+        u
+      ),
   };
 }
+
+
+export async function verifyLoginCode(
+  challengeId: string,
+  codigo: string
+) {
+  const result =
+    await verifyAdminLogin2fa(
+      challengeId,
+      codigo
+    );
+
+  const u =
+    await findUserById(
+      result.userId
+    );
+
+  if (
+    !u ||
+    !u.activo ||
+    !u.email_verificado ||
+    String(
+      u.rol_nombre ||
+      ''
+    )
+      .trim()
+      .toLowerCase() !==
+      'admin' ||
+    Number(
+      u.session_version
+    ) !==
+      Number(
+        result.sessionVersion
+      )
+  ) {
+    throw new AppError(
+      'Sesión administrativa inválida',
+      401
+    );
+  }
+
+  await registrarLoginExitoso(
+    u,
+    true
+  );
+
+  return {
+    token:
+      result.token,
+
+    user:
+      buildUserResponse(
+        u
+      ),
+  };
+}
+
 
 export async function register(data: {
   nombre: string;

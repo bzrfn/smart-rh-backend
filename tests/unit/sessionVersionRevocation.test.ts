@@ -211,52 +211,105 @@ describe(
 
 
     test(
-      'login firma el JWT con sessionVersion actual',
+      'login firma JWT con sessionVersion actual en ambos flujos',
       () => {
-        const source =
+        const authSource =
           read(
             'src/modules/auth/auth.service.ts'
           );
 
-        const start =
-          source.indexOf(
-            'export async function verifyLoginCode'
+        const login2faSource =
+          read(
+            'src/modules/auth/login2fa.service.ts'
           );
 
-        const end =
-          source.indexOf(
-            'export async function register',
-            start
+
+        const loginStart =
+          authSource.indexOf(
+            'export async function login'
           );
+
+        const verifyStart =
+          authSource.indexOf(
+            'export async function verifyLoginCode',
+            loginStart
+          );
+
 
         expect(
-          start
+          loginStart
         ).toBeGreaterThanOrEqual(
           0
         );
 
         expect(
-          end
+          verifyStart
         ).toBeGreaterThan(
-          start
+          loginStart
         );
 
-        const block =
-          source.slice(
-            start,
-            end
+
+        const directLoginBlock =
+          authSource.slice(
+            loginStart,
+            verifyStart
           );
 
+
         expect(
-          block
+          directLoginBlock
+        ).toContain(
+          'signJwt({'
+        );
+
+        expect(
+          directLoginBlock
         ).toContain(
           'sessionVersion:'
         );
 
         expect(
-          block
+          directLoginBlock
         ).toContain(
           'u.session_version'
+        );
+
+
+        const adminVerifyStart =
+          login2faSource.indexOf(
+            'async function verifyAdminLogin2fa'
+          );
+
+
+        expect(
+          adminVerifyStart
+        ).toBeGreaterThanOrEqual(
+          0
+        );
+
+
+        const adminBlock =
+          login2faSource.slice(
+            adminVerifyStart
+          );
+
+
+        expect(
+          adminBlock
+        ).toContain(
+          'signSessionToken({'
+        );
+
+        expect(
+          adminBlock
+        ).toContain(
+          'sessionVersion:'
+        );
+
+        expect(
+          adminBlock
+        ).toContain(
+          'result.user.sessionVersion'
         );
       }
     );

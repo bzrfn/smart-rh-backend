@@ -15,35 +15,75 @@ import {
 } from './auth.service.js';
 import { guardarFotoPerfil } from '../documentos/documentos.service.js';
 
-export async function loginController(req: Request, res: Response, next: NextFunction) {
+export async function loginController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const { correo, contrasena } = validateLogin(req.body);
-    const data = await login(correo, contrasena);
+    const {
+      correo,
+      contrasena,
+    } =
+      validateLogin(
+        req.body
+      );
+
+    const data =
+      await login(
+        correo,
+        contrasena,
+        req.ip
+      );
 
     res.json({
       ok: true,
       ...data,
     });
+
   } catch (e) {
     next(e);
   }
 }
 
-export async function verifyLoginCodeController(req: Request, res: Response, next: NextFunction) {
-  try {
-    const correo = String(req.body?.correo || '').trim().toLowerCase();
-    const codigo = String(req.body?.codigo || '').trim();
 
-    const data = await verifyLoginCode(correo, codigo);
+export async function verifyLoginCodeController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const challengeId =
+      String(
+        req.body?.challengeId ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+    const codigo =
+      String(
+        req.body?.codigo ||
+        ''
+      )
+        .trim();
+
+    const data =
+      await verifyLoginCode(
+        challengeId,
+        codigo
+      );
 
     res.json({
       ok: true,
       ...data,
     });
+
   } catch (e) {
     next(e);
   }
 }
+
 
 export async function registerController(req: Request, res: Response, next: NextFunction) {
   try {
