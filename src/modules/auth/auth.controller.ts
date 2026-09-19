@@ -106,7 +106,7 @@ export async function verifyAccountController(req: Request, res: Response, next:
 export async function forgotPasswordController(req: Request, res: Response, next: NextFunction) {
   try {
     const { correo } = validateForgotPassword(req.body);
-    const data = await forgotPassword(correo);
+    const data = await forgotPassword(correo, req.ip);
 
     res.json({
       ok: true,
@@ -119,8 +119,8 @@ export async function forgotPasswordController(req: Request, res: Response, next
 
 export async function resetPasswordController(req: Request, res: Response, next: NextFunction) {
   try {
-    const { token, nuevaContrasena } = validateResetPassword(req.body);
-    const data = await resetPassword(token, nuevaContrasena);
+    const { correo, codigo, nuevaContrasena } = validateResetPassword(req.body);
+    const data = await resetPassword(correo, codigo, nuevaContrasena);
 
     res.json({
       ok: true,

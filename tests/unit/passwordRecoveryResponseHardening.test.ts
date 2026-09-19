@@ -1,4 +1,5 @@
 import {
+  existsSync,
   readFileSync,
 } from 'node:fs';
 
@@ -7,40 +8,16 @@ import {
 } from 'node:path';
 
 
-function getForgotPasswordBlock():
+function read(
+  relativePath: string
+):
 string {
-  const source =
-    readFileSync(
-      join(
-        process.cwd(),
-        'src/modules/auth/auth.service.ts'
-      ),
-      'utf8'
-    );
-
-  const start =
-    source.indexOf(
-      'export async function forgotPassword'
-    );
-
-  const end =
-    source.indexOf(
-      'export async function resetPassword',
-      start
-    );
-
-  if (
-    start < 0 ||
-    end <= start
-  ) {
-    throw new Error(
-      'No se pudo localizar forgotPassword'
-    );
-  }
-
-  return source.slice(
-    start,
-    end
+  return readFileSync(
+    join(
+      process.cwd(),
+      relativePath
+    ),
+    'utf8'
   );
 }
 
@@ -49,109 +26,214 @@ describe(
   'Password recovery response hardening',
   () => {
     test(
-      'forgotPassword no devuelve resetToken por HTTP',
-      () => {
-        const block =
-          getForgotPasswordBlock();
-
-        expect(
-          block
-        ).not.toContain(
-          'resetToken:'
-        );
-      }
-    );
-
-
-    test(
-      'correo inexistente no produce 404 explicito',
-      () => {
-        const block =
-          getForgotPasswordBlock();
-
-        expect(
-          block
-        ).not.toContain(
-          "throw new AppError('No existe una cuenta con ese correo', 404)"
-        );
-      }
-    );
-
-
-    test(
-      'usa mensaje publico neutral',
-      () => {
-        const block =
-          getForgotPasswordBlock();
-
-        expect(
-          block
-        ).toContain(
-          'Si existe una cuenta asociada a ese correo'
-        );
-
-        const responses =
-          block.match(
-            /message:\s*publicMessage/g
-          ) || [];
-
-        expect(
-          responses.length
-        ).toBe(
-          2
-        );
-      }
-    );
-
-
-    test(
-      'el codigo real solamente se utiliza para el correo',
-      () => {
-        const block =
-          getForgotPasswordBlock();
-
-        expect(
-          block
-        ).toContain(
-          'codigo: reset.token'
-        );
-
-        expect(
-          block
-        ).not.toContain(
-          'message: reset.token'
-        );
-      }
-    );
-
-
-    test(
-      'resetPassword conserva consumo del codigo',
+      'respuesta publica no expone secretos',
       () => {
         const source =
-          readFileSync(
-            join(
-              process.cwd(),
-              'src/modules/auth/auth.service.ts'
-            ),
-            'utf8'
+          read(
+            'src/modules/auth/passwordRecovery.service.ts'
           );
 
         const start =
           source.indexOf(
-            'export async function resetPassword'
+            'function neutralRequestResponse'
           );
+
+        const end =
+          source.indexOf(
+            'async function safeEvent',
+            start
+          );
+
+        expect(
+          start
+        ).toBeGreaterThanOrEqual(
+          0
+        );
+
+        expect(
+          end
+        ).toBeGreaterThan(
+          start
+        );
 
         const block =
           source.slice(
             start,
-            start + 1800
+            end
           );
 
         expect(
           block
         ).toContain(
-          'consumeResetToken(token)'
+          'PASSWORD_RECOVERY_PUBLIC_MESSAGE'
+        );
+
+        expect(
+          block
+        ).not.toContain(
+          'resetToken'
+        );
+
+        expect(
+          block
+        ).not.toContain(
+          'challengeId'
+        );
+
+        expect(
+          block
+        ).not.toContain(
+          'codeHmac'
+        );
+
+        expect(
+          block
+        ).not.toContain(
+          'codigo:'
+        );
+      }
+    );
+
+
+    test(
+      'auth service usa recovery persistente',
+      () => {
+        const source =
+          read(
+            'src/modules/auth/auth.service.ts'
+          );
+
+        expect(
+          source
+        ).toContain(
+          'requestPasswordRecovery('
+        );
+
+        expect(
+          source
+        ).toContain(
+          'completePasswordRecovery('
+        );
+
+        expect(
+          source
+        ).not.toContain(
+          'createResetToken'
+        );
+
+        expect(
+          source
+        ).not.toContain(
+          'consumeResetToken'
+        );
+
+        expect(
+          source
+        ).not.toContain(
+          'auth.reset.store'
+        );
+      }
+    );
+
+
+    test(
+      'store temporal fue retirado',
+      () => {
+        expect(
+          existsSync(
+            join(
+              process.cwd(),
+              'src/modules/auth/auth.reset.store.ts'
+            )
+          )
+        ).toBe(
+          false
+        );
+      }
+    );
+
+
+    test(
+      'controller usa nuevo contrato',
+      () => {
+        const source =
+          read(
+            'src/modules/auth/auth.controller.ts'
+          );
+
+        expect(
+          source
+        ).toContain(
+          'forgotPassword(correo, req.ip)'
+        );
+
+        expect(
+          source
+        ).toContain(
+          'resetPassword(correo, codigo, nuevaContrasena)'
+        );
+
+        expect(
+          source
+        ).not.toContain(
+          'resetPassword(token, nuevaContrasena)'
+        );
+      }
+    );
+
+
+    test(
+      'validator usa correo codigo y password',
+      () => {
+        const source =
+          read(
+            'src/validators/authValidators.ts'
+          );
+
+        const start =
+          source.indexOf(
+            'export function validateResetPassword'
+          );
+
+        expect(
+          start
+        ).toBeGreaterThanOrEqual(
+          0
+        );
+
+        const block =
+          source.slice(
+            start
+          );
+
+        expect(
+          block
+        ).toContain(
+          'body?.correo'
+        );
+
+        expect(
+          block
+        ).toContain(
+          'body?.codigo'
+        );
+
+        expect(
+          block
+        ).toContain(
+          'nuevaContrasena'
+        );
+
+        expect(
+          block
+        ).toContain(
+          '/^\\d{6}$/'
+        );
+
+        expect(
+          block
+        ).not.toContain(
+          'body?.token'
         );
       }
     );

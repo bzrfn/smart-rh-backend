@@ -66,16 +66,59 @@ export function validateForgotPassword(body: any) {
 }
 
 export function validateResetPassword(body: any) {
-  const token = String(body?.token || '').trim();
-  const nuevaContrasena = String(body?.nuevaContrasena || '');
+  const correo =
+    String(
+      body?.correo || ''
+    )
+      .trim()
+      .toLowerCase();
 
-  if (!token || !nuevaContrasena) {
-    throw new AppError('token y nuevaContrasena son requeridos', 400);
+  const codigo =
+    String(
+      body?.codigo || ''
+    )
+      .trim();
+
+  const nuevaContrasena =
+    String(
+      body?.nuevaContrasena || ''
+    );
+
+  if (
+    !correo ||
+    !codigo ||
+    !nuevaContrasena
+  ) {
+    throw new AppError(
+      'correo, codigo y nuevaContrasena son requeridos',
+      400
+    );
+  }
+
+  if (!isEmail(correo)) {
+    throw new AppError(
+      'correo invalido',
+      400
+    );
+  }
+
+  if (!/^\d{6}$/.test(codigo)) {
+    throw new AppError(
+      'codigo invalido',
+      400
+    );
   }
 
   if (nuevaContrasena.length < 8) {
-    throw new AppError('la nueva contrasena debe tener al menos 8 caracteres', 400);
+    throw new AppError(
+      'la nueva contrasena debe tener al menos 8 caracteres',
+      400
+    );
   }
 
-  return { token, nuevaContrasena };
+  return {
+    correo,
+    codigo,
+    nuevaContrasena,
+  };
 }

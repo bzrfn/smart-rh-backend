@@ -8,12 +8,14 @@ import {
   findUserByEmail,
   findUserById,
   marcarEmailVerificado,
-  updateUserPasswordById,
 } from './auth.repository.js';
 import { verifyPassword, hashPassword } from '../../utils/password.js';
 import { AppError } from '../../utils/AppError.js';
 import { signJwt } from '../../config/jwt.js';
-import { consumeResetToken, createResetToken } from './auth.reset.store.js';
+import {
+  completePasswordRecovery,
+  requestPasswordRecovery,
+} from './passwordRecovery.service.js';
 import { registrarEventoSistema } from '../eventosSistema/eventosSistema.service.js';
 import { registrarHistorialAcceso } from '../historialAccesos/historialAccesos.service.js';
 import { generarRecordatorioAsistenciaLogin } from '../notificaciones/notificaciones.service.js';
@@ -27,9 +29,7 @@ import {
 import {
   enviarCodigoConfirmacionCuentaEmail,
   enviarCodigoLoginEmail,
-  enviarCodigoResetPasswordEmail,
   enviarCuentaConfirmadaEmail,
-  enviarPasswordActualizadoEmail,
 } from './auth.email.service.js';
 
 function buildUserResponse(u: any) {
@@ -469,104 +469,25 @@ export async function verifyAccount(correo: string, codigo: string) {
   };
 }
 
-export async function forgotPassword(correo: string) {
-  const publicMessage =
-    'Si existe una cuenta asociada a ese correo, se enviará un código de recuperación.';
-
-  const user = await findUserByEmail(correo);
-
-  if (!user) {
-    await registrarEventoSistema({
-      tipo: 'RECUPERACION_PASSWORD',
-      correo,
-      modulo: 'auth',
-      descripcion: 'Solicitud de recuperación para correo no registrado.',
-      resultado: 'fallido',
-    });
-
-    return {
-      message: publicMessage,
-      expiresInMinutes: 15,
-    };
-  }
-
-  const reset = createResetToken({
-    userId: user.id,
-    correo: user.correo,
-  });
-
-  await enviarCodigoResetPasswordEmail({
-    correo: user.correo,
-    nombre: getFullName(user),
-    codigo: reset.token,
-  });
-
-  await registrarEventoSistema({
-    tipo: 'RECUPERACION_PASSWORD',
-    usuario_id: user.id,
-    correo: user.correo,
-    modulo: 'auth',
-    descripcion: 'Código de recuperación generado y enviado por correo.',
-    resultado: 'exitoso',
-    metadata: {
-      expiresInMinutes: reset.expiresInMinutes,
-    },
-  });
-
-  return {
-    message: publicMessage,
-    expiresInMinutes: reset.expiresInMinutes,
-  };
+export async function forgotPassword(
+  correo: string,
+  ip?: unknown
+) {
+  return requestPasswordRecovery(
+    correo,
+    ip
+  );
 }
 
-export async function resetPassword(token: string, nuevaContrasena: string) {
-  const entry = consumeResetToken(token);
 
-  if (!entry) {
-    await registrarEventoSistema({
-      tipo: 'RESET_PASSWORD',
-      modulo: 'auth',
-      descripcion: 'Intento de restablecimiento con token inválido o expirado.',
-      resultado: 'fallido',
-    });
-
-    throw new AppError('Token de recuperación inválido o expirado', 400);
-  }
-
-  const hashed = await hashPassword(nuevaContrasena);
-  await updateUserPasswordById(entry.userId, hashed);
-
-  const user = await findUserById(entry.userId);
-
-  if (user) {
-    await enviarPasswordActualizadoEmail({
-      correo: user.correo,
-      nombre: getFullName(user),
-    });
-  }
-
-  await registrarEventoSistema({
-    tipo: 'RESET_PASSWORD',
-    usuario_id: entry.userId,
-    correo: entry.correo,
-    modulo: 'auth',
-    descripcion: 'Contraseña actualizada correctamente.',
-    resultado: 'exitoso',
-  });
-
-  await registrarActividadEmpleado({
-    usuario_id: entry.userId,
-    tipo: 'RESET_PASSWORD',
-    titulo: 'Contraseña actualizada',
-    descripcion: 'La contraseña del usuario fue actualizada correctamente.',
-    modulo: 'auth',
-    origen: 'api',
-    metadata: {
-      correo: entry.correo,
-    },
-  });
-
-  return {
-    message: 'Contraseña actualizada correctamente',
-  };
+export async function resetPassword(
+  correo: string,
+  codigo: string,
+  nuevaContrasena: string
+) {
+  return completePasswordRecovery(
+    correo,
+    codigo,
+    nuevaContrasena
+  );
 }
