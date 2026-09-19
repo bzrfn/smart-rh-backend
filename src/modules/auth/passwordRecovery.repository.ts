@@ -601,6 +601,8 @@ Promise<
 
         SET
           contrasena = ?,
+          session_version =
+            session_version + 1,
           updated_at = NOW()
 
         WHERE
@@ -608,6 +610,26 @@ Promise<
       `,
       [
         passwordHash,
+        row.user_id,
+      ]
+    );
+
+
+
+    await connection.query(
+      `
+        UPDATE
+          email_verification_codes
+
+        SET
+          usado = 1
+
+        WHERE
+          usuario_id = ?
+          AND tipo = 'LOGIN_2FA'
+          AND usado = 0
+      `,
+      [
         row.user_id,
       ]
     );

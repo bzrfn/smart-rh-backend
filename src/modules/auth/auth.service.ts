@@ -274,7 +274,19 @@ export async function verifyLoginCode(correo: string, codigo: string) {
     throw new AppError('Código inválido o expirado', 400);
   }
 
-  const token = signJwt({ userId: u.id, role: u.rol_nombre });
+  const token =
+    signJwt({
+      userId:
+        u.id,
+
+      role:
+        u.rol_nombre,
+
+      sessionVersion:
+        Number(
+          u.session_version
+        ),
+    });
 
   await registrarLoginExitoso(u);
 

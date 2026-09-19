@@ -295,6 +295,7 @@ describe(
             {
               id: 10,
               activo: 0,
+              session_version: 1,
               role: 'empleado',
             }
           )
@@ -316,6 +317,7 @@ describe(
             {
               id: 10,
               activo: 1,
+              session_version: 1,
               role: 'empleado',
             }
           )

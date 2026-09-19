@@ -8,6 +8,7 @@ export type DbUser = {
   contrasena: string;
   activo: number;
   email_verificado: number;
+  session_version: number;
   rol_id: number;
   rol_nombre: string;
   telefono?: string | null;
@@ -27,6 +28,7 @@ const USER_SELECT = `
     u.contrasena,
     u.activo,
     COALESCE(u.email_verificado, 0) AS email_verificado,
+    u.session_version,
     u.rol_id,
     u.telefono,
     u.direccion,
@@ -134,15 +136,6 @@ export async function createUser(data: {
   } finally {
     conn.release();
   }
-}
-
-export async function updateUserPasswordById(userId: number, hashedPassword: string) {
-  await pool.query(
-    `UPDATE usuarios
-     SET contrasena = ?, updated_at = NOW()
-     WHERE id = ?`,
-    [hashedPassword, userId]
-  );
 }
 
 export async function marcarEmailVerificado(userId: number) {
