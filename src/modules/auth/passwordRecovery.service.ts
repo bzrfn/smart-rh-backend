@@ -30,10 +30,10 @@ import {
 import {
   consumePasswordResetChallenge,
   countRecentPasswordResetChallenges,
-  createPasswordResetChallenge,
   findEligiblePasswordRecoveryUserByEmail,
   findLatestActivePasswordResetChallenge,
-  invalidateActivePasswordResetChallenges,
+  invalidatePasswordResetChallenge,
+  replacePasswordResetChallenge,
 } from './passwordRecovery.repository.js';
 
 
@@ -78,10 +78,10 @@ export type PasswordRecoveryDependencies = {
     typeof countRecentPasswordResetChallenges;
 
   invalidateActiveChallenges:
-    typeof invalidateActivePasswordResetChallenges;
+    typeof invalidatePasswordResetChallenge;
 
   createChallenge:
-    typeof createPasswordResetChallenge;
+    typeof replacePasswordResetChallenge;
 
   consumeChallenge:
     typeof consumePasswordResetChallenge;
@@ -136,10 +136,10 @@ const defaultDependencies:
       countRecentPasswordResetChallenges,
 
     invalidateActiveChallenges:
-      invalidateActivePasswordResetChallenges,
+      invalidatePasswordResetChallenge,
 
     createChallenge:
-      createPasswordResetChallenge,
+      replacePasswordResetChallenge,
 
     consumeChallenge:
       consumePasswordResetChallenge,
@@ -369,22 +369,45 @@ export function buildPasswordRecoveryService(
       );
 
 
-    await deps.invalidateActiveChallenges(
-      user.id
-    );
+    const replaceResult =
+      await deps.createChallenge({
+        challengeId,
+
+        userId:
+          user.id,
+
+        expectedSessionVersion:
+          Number(
+            user.session_version
+          ),
+
+        codeHmac,
+
+        requestIpHash,
+
+        expiresInMinutes:
+          PASSWORD_RECOVERY_CODE_EXPIRES_MINUTES,
+
+        maxAttempts:
+          PASSWORD_RECOVERY_MAX_ATTEMPTS,
+
+        cooldownSeconds:
+          PASSWORD_RECOVERY_COOLDOWN_SECONDS,
+
+        rateWindowMinutes:
+          PASSWORD_RECOVERY_RATE_WINDOW_MINUTES,
+
+        maxPerUserWindow:
+          PASSWORD_RECOVERY_MAX_PER_USER_WINDOW,
+      });
 
 
-    await deps.createChallenge({
-      challengeId,
-      userId:
-        user.id,
-      codeHmac,
-      requestIpHash,
-      expiresInMinutes:
-        PASSWORD_RECOVERY_CODE_EXPIRES_MINUTES,
-      maxAttempts:
-        PASSWORD_RECOVERY_MAX_ATTEMPTS,
-    });
+    if (
+      replaceResult.status !==
+        'created'
+    ) {
+      return neutralRequestResponse();
+    }
 
 
     try {
@@ -403,7 +426,7 @@ export function buildPasswordRecoveryService(
 
     } catch {
       await deps.invalidateActiveChallenges(
-        user.id
+        challengeId
       );
 
       await safeEvent(

@@ -63,8 +63,10 @@ function makeDeps(
 
     createChallenge:
       jest.fn(
-        async () =>
-          undefined
+        async () => ({
+          status:
+            'created' as const,
+        })
       ),
 
     consumeChallenge:
@@ -414,7 +416,7 @@ describe(
         expect(
           deps.invalidateActiveChallenges
         ).toHaveBeenCalledTimes(
-          2
+          1
         );
 
         expect(
