@@ -5,6 +5,10 @@ import {
 } from './adminAccess.routes.js';
 
 import {
+  adminInviteRoutes,
+} from './adminInvite.routes.js';
+
+import {
   forgotPasswordController,
   loginController,
   registerController,
@@ -17,6 +21,12 @@ export const authRoutes = Router();
 authRoutes.use(
   '/admin-access',
   adminAccessRoutes
+);
+
+
+authRoutes.use(
+  '/admin-invitations',
+  adminInviteRoutes
 );
 
 
