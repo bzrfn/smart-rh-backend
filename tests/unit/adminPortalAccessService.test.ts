@@ -6,6 +6,10 @@ import {
   verifyAdminAccessToken,
 } from '../../src/modules/auth/adminAccess.token.js';
 
+import {
+  env,
+} from '../../src/config/env.js';
+
 
 function createDependencies() {
   return {
@@ -54,12 +58,32 @@ const admin = {
 };
 
 
+const originalApproverEmail =
+  env.adminAccess.approverEmail;
+
+
 describe(
   'Admin portal access service',
   () => {
+
+    beforeEach(
+      () => {
+        env.adminAccess.approverEmail =
+          admin.correo;
+      }
+    );
+
+
+    afterAll(
+      () => {
+        env.adminAccess.approverEmail =
+          originalApproverEmail;
+      }
+    );
     test(
-      'correo no elegible recibe respuesta neutra',
+      'administrador general no disponible produce error controlado',
       async () => {
+
         const deps =
           createDependencies();
 
@@ -74,27 +98,28 @@ describe(
             deps as any
           );
 
-        const result =
-          await service.requestAdminAccess(
+        await expect(
+          service.requestAdminAccess(
             'desconocido@example.com',
             '127.0.0.1'
-          );
+          )
+        ).rejects.toMatchObject({
+          message:
+            'Administrador general no disponible',
+
+          statusCode:
+            503,
+        });
 
         expect(
-          result.accepted
-        ).toBe(
-          true
+          deps.findEligibleAdminByEmail
+        ).toHaveBeenCalledWith(
+          admin.correo
         );
 
         expect(
-          result.challengeId
-        ).toMatch(
-          /^[a-f0-9]{64}$/
-        );
-
-        expect(
-          result.message
-        ).not.toContain(
+          deps.findEligibleAdminByEmail
+        ).not.toHaveBeenCalledWith(
           'desconocido@example.com'
         );
 
@@ -110,10 +135,35 @@ describe(
 
 
     test(
-      'correo mal formado mantiene respuesta neutra',
+      'correo enviado por cliente no puede seleccionar al autorizador',
       async () => {
+
         const deps =
           createDependencies();
+
+        deps
+          .findEligibleAdminByEmail
+          .mockResolvedValue(
+            admin
+          );
+
+        deps
+          .findLatestActiveAdminChallenge
+          .mockResolvedValue(
+            null
+          );
+
+        deps
+          .countRecentAdminChallenges
+          .mockResolvedValue(
+            0
+          );
+
+        deps
+          .countRecentIpChallenges
+          .mockResolvedValue(
+            0
+          );
 
         const service =
           buildAdminAccessService(
@@ -133,14 +183,31 @@ describe(
         );
 
         expect(
-          result.challengeId
-        ).toMatch(
-          /^[a-f0-9]{64}$/
+          deps.findEligibleAdminByEmail
+        ).toHaveBeenCalledTimes(
+          1
         );
 
         expect(
           deps.findEligibleAdminByEmail
-        ).not.toHaveBeenCalled();
+        ).toHaveBeenCalledWith(
+          admin.correo
+        );
+
+        expect(
+          deps.findEligibleAdminByEmail
+        ).not.toHaveBeenCalledWith(
+          'no-es-correo'
+        );
+
+        expect(
+          deps.sendAdminAccessCodeEmail
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            correo:
+              admin.correo,
+          })
+        );
       }
     );
 

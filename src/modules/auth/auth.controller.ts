@@ -76,24 +76,6 @@ export async function adminLoginController(
         req.body
       );
 
-    const sponsorEmail =
-      String(
-        req.adminAccess.sponsorEmail ||
-        ''
-      )
-        .trim()
-        .toLowerCase();
-
-    if (
-      sponsorEmail !==
-      correo
-    ) {
-      throw new AppError(
-        'Acceso administrativo invalido',
-        401
-      );
-    }
-
     const data =
       await login(
         correo,

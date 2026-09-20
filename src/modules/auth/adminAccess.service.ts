@@ -3,6 +3,10 @@ import {
 } from '../../utils/AppError.js';
 
 import {
+  env,
+} from '../../config/env.js';
+
+import {
   registrarEventoSistema,
 } from '../eventosSistema/eventosSistema.service.js';
 
@@ -176,7 +180,7 @@ function neutralRequestResponse(
       ADMIN_ACCESS_CODE_EXPIRES_MINUTES,
 
     message:
-      'Si el correo corresponde a un administrador habilitado, se envió un código de autorización.',
+      'La solicitud fue enviada al administrador general de SMART RH.',
   };
 }
 
@@ -204,15 +208,22 @@ export function buildAdminAccessService(
       defaultDependencies
 ) {
   async function requestAdminAccess(
-    correoInput: unknown,
+    _correoInput: unknown,
     ipInput?: unknown
   ) {
     const fallbackChallengeId =
       generateAdminAccessChallengeId();
 
+    /*
+     * El cliente NO selecciona qué administrador recibe
+     * el primer código.
+     *
+     * El destinatario se controla exclusivamente desde
+     * configuración segura del backend.
+     */
     const correo =
       normalizeEmail(
-        correoInput
+        env.adminAccess.approverEmail
       );
 
     if (
@@ -220,8 +231,9 @@ export function buildAdminAccessService(
         correo
       )
     ) {
-      return neutralRequestResponse(
-        fallbackChallengeId
+      throw new AppError(
+        'Autorización administrativa no configurada',
+        503
       );
     }
 
@@ -230,9 +242,15 @@ export function buildAdminAccessService(
         correo
       );
 
-    if (!admin) {
-      return neutralRequestResponse(
-        fallbackChallengeId
+    if (
+      !admin ||
+      normalizeEmail(
+        admin.correo
+      ) !== correo
+    ) {
+      throw new AppError(
+        'Administrador general no disponible',
+        503
       );
     }
 

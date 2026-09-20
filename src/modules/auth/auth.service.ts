@@ -11,6 +11,7 @@ import {
 } from './auth.repository.js';
 import { verifyPassword, hashPassword } from '../../utils/password.js';
 import { AppError } from '../../utils/AppError.js';
+import { env } from '../../config/env.js';
 import {
   completePasswordRecovery,
   requestPasswordRecovery,
@@ -203,30 +204,34 @@ export async function login(
         .trim()
         .toLowerCase();
 
-    const userEmail =
+    const approverEmail =
       String(
-        u.correo ||
+        env.adminAccess.approverEmail ||
         ''
       )
         .trim()
         .toLowerCase();
 
+    /*
+     * sponsor = administrador general que AUTORIZÓ.
+     *
+     * u = administrador que realmente intenta iniciar sesión.
+     *
+     * Son identidades distintas por diseño.
+     */
     if (
       !adminAccess ||
       !Number.isInteger(
         sponsorId
       ) ||
-      sponsorId !==
-        Number(
-          u.id
-        ) ||
+      sponsorId <= 0 ||
+      !approverEmail ||
       sponsorEmail !==
-        userEmail
+        approverEmail
     ) {
       /*
-       * Respuesta generica:
-       * no revelar desde /auth/login
-       * que el correo pertenece a un admin.
+       * Respuesta genérica:
+       * no revelar que el correo pertenece a un admin.
        */
       throw new AppError(
         'Credenciales incorrectas',

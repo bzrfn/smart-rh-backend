@@ -106,6 +106,10 @@ export const env = {
     hmacSecret:
       process.env.ADMIN_ACCESS_HMAC_SECRET ||
       '',
+
+    approverEmail:
+      process.env.ADMIN_ACCESS_APPROVER_EMAIL ||
+      '',
   },
 
 

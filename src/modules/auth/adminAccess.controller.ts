@@ -18,7 +18,7 @@ export async function requestAdminAccessController(
   try {
     const result =
       await requestAdminAccess(
-        req.body?.correo,
+        undefined,
         req.ip
       );
 

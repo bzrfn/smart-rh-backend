@@ -41,8 +41,9 @@ describe(
 
 
     test(
-      'controller vincula token temporal con correo',
+      'controller transporta identidad del autorizador central',
       () => {
+
         const controller =
           source(
             'src/modules/auth/auth.controller.ts'
@@ -60,9 +61,14 @@ describe(
           'req.adminAccess.sponsorAdminId'
         );
 
+        /*
+         * El controller ya NO obliga a que
+         * sponsorEmail sea igual al correo
+         * de quien inicia sesión.
+         */
         expect(
           controller
-        ).toContain(
+        ).not.toContain(
           'sponsorEmail !=='
         );
       }
@@ -70,7 +76,7 @@ describe(
 
 
     test(
-      'login admin exige identidad preautorizada antes del password',
+      'login admin exige autorización central antes del password',
       () => {
         const full =
           source(
