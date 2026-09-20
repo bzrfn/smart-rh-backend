@@ -147,13 +147,43 @@ describe(
         expect(
           emailSource
         ).toContain(
-          '${escapeHtml(nombre)}'
+          'const safeNombre'
         );
 
         expect(
           emailSource
         ).toContain(
-          'href="${escapeHtml(acceptUrl)}"'
+          'escapeHtml('
+        );
+
+        expect(
+          emailSource
+        ).toContain(
+          'input.nombre'
+        );
+
+        expect(
+          emailSource
+        ).toContain(
+          '${safeNombre}'
+        );
+
+        expect(
+          emailSource
+        ).toContain(
+          'const safeAcceptUrl'
+        );
+
+        expect(
+          emailSource
+        ).toContain(
+          'input.acceptUrl'
+        );
+
+        expect(
+          emailSource
+        ).toContain(
+          'href="${safeAcceptUrl}"'
         );
       }
     );
