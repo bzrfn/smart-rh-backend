@@ -25,7 +25,7 @@ describe(
       () => {
         const start =
           source.indexOf(
-            'function isEligibleAdminRow'
+            'function isEligibleLogin2faUserRow'
           );
 
         const end =
@@ -126,7 +126,7 @@ describe(
         expect(
           block
         ).toContain(
-          'isEligibleAdminRow'
+          'isEligibleLogin2faUserRow'
         );
 
         expect(
@@ -227,7 +227,7 @@ describe(
         expect(
           block
         ).toContain(
-          'isEligibleAdminRow'
+          'isEligibleLogin2faUserRow'
         );
 
         expect(

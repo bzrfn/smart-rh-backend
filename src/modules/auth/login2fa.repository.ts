@@ -94,16 +94,31 @@ function mapAdminUser(
 }
 
 
-function isEligibleAdminRow(
+function isEligibleLogin2faUserRow(
   row: any
 ): boolean {
+  if (!row) {
+    return false;
+  }
+
+  const role =
+    String(
+      row.rol_nombre ||
+      ''
+    )
+      .trim()
+      .toLowerCase();
+
   return Boolean(
-    row &&
     Number(row.activo) === 1 &&
     Number(row.email_verificado) === 1 &&
-    String(row.rol_nombre)
-      .trim()
-      .toLowerCase() === 'admin'
+    [
+      'admin',
+      'empleado',
+      'tecnico',
+    ].includes(
+      role
+    )
   );
 }
 
@@ -302,7 +317,7 @@ export async function replaceLogin2faChallenge(
       (userRows as any[])[0];
 
     if (
-      !isEligibleAdminRow(
+      !isEligibleLogin2faUserRow(
         user
       )
     ) {
@@ -602,7 +617,7 @@ export async function consumeLogin2faChallenge(
       (userRows as any[])[0];
 
     if (
-      !isEligibleAdminRow(
+      !isEligibleLogin2faUserRow(
         user
       )
     ) {
