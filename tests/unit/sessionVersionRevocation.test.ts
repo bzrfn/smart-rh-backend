@@ -211,7 +211,7 @@ describe(
 
 
     test(
-      'login firma JWT con sessionVersion actual en ambos flujos',
+      'login propaga sessionVersion al challenge 2FA en ambos flujos',
       () => {
         const authSource =
           read(
@@ -259,6 +259,12 @@ describe(
         expect(
           directLoginBlock
         ).toContain(
+          'issueLogin2fa('
+        );
+
+        expect(
+          directLoginBlock
+        ).not.toContain(
           'signJwt({'
         );
 
@@ -275,39 +281,52 @@ describe(
         );
 
 
+        const genericVerifyStart =
+          login2faSource.indexOf(
+            'async function verifyLogin2fa'
+          );
+
         const adminVerifyStart =
           login2faSource.indexOf(
-            'async function verifyAdminLogin2fa'
+            'async function verifyAdminLogin2fa',
+            genericVerifyStart
           );
 
 
         expect(
-          adminVerifyStart
+          genericVerifyStart
         ).toBeGreaterThanOrEqual(
           0
         );
 
+        expect(
+          adminVerifyStart
+        ).toBeGreaterThan(
+          genericVerifyStart
+        );
 
-        const adminBlock =
+
+        const genericVerifyBlock =
           login2faSource.slice(
+            genericVerifyStart,
             adminVerifyStart
           );
 
 
         expect(
-          adminBlock
+          genericVerifyBlock
         ).toContain(
           'signSessionToken({'
         );
 
         expect(
-          adminBlock
+          genericVerifyBlock
         ).toContain(
           'sessionVersion:'
         );
 
         expect(
-          adminBlock
+          genericVerifyBlock
         ).toContain(
           'result.user.sessionVersion'
         );

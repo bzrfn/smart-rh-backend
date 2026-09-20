@@ -11,15 +11,15 @@ import {
 } from './auth.repository.js';
 import { verifyPassword, hashPassword } from '../../utils/password.js';
 import { AppError } from '../../utils/AppError.js';
-import { signJwt } from '../../config/jwt.js';
 import {
   completePasswordRecovery,
   requestPasswordRecovery,
 } from './passwordRecovery.service.js';
 
 import {
+  issueLogin2fa,
+  verifyLogin2fa,
   issueAdminLogin2fa,
-  verifyAdminLogin2fa,
 } from './login2fa.service.js';
 import { registrarEventoSistema } from '../eventosSistema/eventosSistema.service.js';
 import { registrarHistorialAcceso } from '../historialAccesos/historialAccesos.service.js';
@@ -364,33 +364,66 @@ export async function login(
     return challenge;
   }
 
-  const token =
-    signJwt({
-      userId:
-        u.id,
+  const challenge =
+    await issueLogin2fa(
+      {
+        id:
+          u.id,
 
+        correo:
+          u.correo,
+
+        nombre:
+          u.nombre,
+
+        apellido:
+          u.apellido,
+
+        role:
+          u.rol_nombre,
+
+        sessionVersion:
+          Number(
+            u.session_version
+          ),
+      },
+      requestIp
+    );
+
+  await registrarEventoSistema({
+    tipo:
+      'LOGIN_2FA_REQUERIDO',
+
+    usuario_id:
+      u.id,
+
+    correo:
+      u.correo,
+
+    modulo:
+      'auth',
+
+    descripcion:
+      challenge.reused
+        ? 'Inicio de sesión pendiente de un código 2FA previamente enviado.'
+        : 'Código 2FA enviado para completar el inicio de sesión.',
+
+    resultado:
+      'exitoso',
+
+    metadata: {
       role:
         u.rol_nombre,
 
-      sessionVersion:
-        Number(
-          u.session_version
-        ),
-    });
+      expiresInMinutes:
+        challenge.expiresInMinutes,
 
-  await registrarLoginExitoso(
-    u,
-    false
-  );
+      reused:
+        challenge.reused,
+    },
+  });
 
-  return {
-    token,
-
-    user:
-      buildUserResponse(
-        u
-      ),
-  };
+  return challenge;
 }
 
 
@@ -399,7 +432,7 @@ export async function verifyLoginCode(
   codigo: string
 ) {
   const result =
-    await verifyAdminLogin2fa(
+    await verifyLogin2fa(
       challengeId,
       codigo
     );
@@ -419,7 +452,12 @@ export async function verifyLoginCode(
     )
       .trim()
       .toLowerCase() !==
-      'admin' ||
+    String(
+      result.role ||
+      ''
+    )
+      .trim()
+      .toLowerCase() ||
     Number(
       u.session_version
     ) !==
@@ -428,7 +466,7 @@ export async function verifyLoginCode(
       )
   ) {
     throw new AppError(
-      'Sesión administrativa inválida',
+      'Sesión de inicio inválida',
       401
     );
   }

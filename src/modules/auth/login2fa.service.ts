@@ -206,16 +206,14 @@ export function buildLogin2faService(
     };
 
 
-  async function issueAdminLogin2fa(
+  async function issueLogin2fa(
     user:
       Login2faIssueUser,
 
     requestIp?:
       unknown
   ) {
-    assertAdminUser(
-      user
-    );
+
 
 
     const active =
@@ -393,7 +391,7 @@ export function buildLogin2faService(
   }
 
 
-  async function verifyAdminLogin2fa(
+  async function verifyLogin2fa(
     challengeIdInput:
       unknown,
 
@@ -484,7 +482,51 @@ export function buildLogin2faService(
   }
 
 
+  async function issueAdminLogin2fa(
+    user: Login2faIssueUser,
+    requestIp?: unknown
+  ) {
+    assertAdminUser(
+      user
+    );
+
+    return issueLogin2fa(
+      user,
+      requestIp
+    );
+  }
+
+  async function verifyAdminLogin2fa(
+    challengeIdInput: unknown,
+    codeInput: unknown
+  ) {
+    const result =
+      await verifyLogin2fa(
+        challengeIdInput,
+        codeInput
+      );
+
+    if (
+      String(
+        result.role ||
+        ''
+      )
+        .trim()
+        .toLowerCase() !==
+      'admin'
+    ) {
+      throw new AppError(
+        'Segundo factor administrativo no disponible',
+        403
+      );
+    }
+
+    return result;
+  }
+
   return {
+    issueLogin2fa,
+    verifyLogin2fa,
     issueAdminLogin2fa,
     verifyAdminLogin2fa,
   };
@@ -494,6 +536,12 @@ export function buildLogin2faService(
 const defaultService =
   buildLogin2faService();
 
+
+export const issueLogin2fa =
+  defaultService.issueLogin2fa;
+
+export const verifyLogin2fa =
+  defaultService.verifyLogin2fa;
 
 export const issueAdminLogin2fa =
   defaultService.issueAdminLogin2fa;

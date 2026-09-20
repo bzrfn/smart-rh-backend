@@ -72,6 +72,12 @@ describe(
 
         expect(
           block
+        ).not.toContain(
+          'signJwt({'
+        );
+
+        expect(
+          block
         ).toContain(
           'return challenge'
         );
@@ -81,13 +87,10 @@ describe(
             'issueAdminLogin2fa'
           );
 
-        const directJwt =
-          block.indexOf(
-            'signJwt({'
-          );
+        const generic2faBranch = block.indexOf('issueLogin2fa(');
 
         expect(
-          directJwt
+          generic2faBranch
         ).toBeGreaterThan(
           adminBranch
         );
@@ -96,7 +99,7 @@ describe(
 
 
     test(
-      'empleado obtiene JWT directo versionado',
+      'empleado recibe challenge 2FA versionado sin JWT directo',
       () => {
         const start =
           service.indexOf(
@@ -118,6 +121,12 @@ describe(
         expect(
           block
         ).toContain(
+          'issueLogin2fa('
+        );
+
+        expect(
+          block
+        ).not.toContain(
           'signJwt({'
         );
 
@@ -135,8 +144,8 @@ describe(
 
         expect(
           block
-        ).toContain(
-          'false'
+        ).not.toContain(
+          'registrarLoginExitoso('
         );
       }
     );
@@ -282,7 +291,7 @@ describe(
         expect(
           block
         ).toContain(
-          'verifyAdminLogin2fa'
+          'verifyLogin2fa'
         );
 
         expect(
@@ -300,6 +309,12 @@ describe(
         expect(
           block
         ).toContain(
+          'result.role'
+        );
+
+        expect(
+          block
+        ).not.toContain(
           "'admin'"
         );
       }
