@@ -17,11 +17,19 @@ import {
 import {
   findAsistenciaById,
   listAllAsistencias,
+  listAsistenciaRevisiones,
   listMisAsistencias,
   listMisAsistenciasByDateRange,
   listPendientes,
-  setAsistenciaEstado,
 } from './asistencia.repository.js';
+
+import {
+  obtenerPoliticaAsistencia,
+} from './asistencia.policy.js';
+
+import {
+  evaluarDuracionAsistencia,
+} from './asistencia.validation.js';
 
 import {
   crearNotificacion,
@@ -269,7 +277,10 @@ async function registerQrUsage(
 
 async function processAttendanceNotifications(
   usuarioId: number,
-  result: ScanResult
+  result: ScanResult,
+  estadoAsistencia:
+    'pendiente' |
+    'INVALIDA_PENDIENTE_REVISION'
 ) {
 
   try {
@@ -331,7 +342,9 @@ async function processAttendanceNotifications(
 
   if (
     result.tipo ===
-    'salida'
+      'salida' &&
+    estadoAsistencia !==
+      'INVALIDA_PENDIENTE_REVISION'
   ) {
 
     try {
@@ -449,6 +462,11 @@ export async function scanQr(
 
   let result:
     ScanResult;
+
+  let estadoAsistenciaResultado:
+    'pendiente' |
+    'INVALIDA_PENDIENTE_REVISION' =
+      'pendiente';
 
 
   try {
@@ -587,12 +605,44 @@ export async function scanQr(
       // SALIDA CON QR NUEVO
       // ------------------------------------------------------
 
+      const {
+        duracionMinimaMinutos,
+      } =
+        await obtenerPoliticaAsistencia(
+          connection
+        );
+
+
+      const evaluacionDuracion =
+        evaluarDuracionAsistencia({
+          horaEntrada:
+            String(
+              asistenciaHoy
+                .hora_entrada ??
+              ''
+            ),
+
+          horaSalida:
+            hora,
+
+          duracionMinimaMinutos,
+        });
+
+
+      estadoAsistenciaResultado =
+        evaluacionDuracion
+          .estadoSalida;
+
+
       await connection.query(
         `
           UPDATE asistencias
           SET
             hora_salida = ?,
             qr_token = ?,
+            estado = ?,
+            duracion_minima_aplicada_minutos = ?,
+            duracion_registrada_segundos = ?,
             updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
             AND hora_salida IS NULL
@@ -600,6 +650,11 @@ export async function scanQr(
         [
           hora,
           token,
+          evaluacionDuracion
+            .estadoSalida,
+          duracionMinimaMinutos,
+          evaluacionDuracion
+            .duracionSegundos,
           asistenciaHoy.id,
         ]
       );
@@ -672,7 +727,8 @@ export async function scanQr(
 
   await processAttendanceNotifications(
     usuario_id,
-    result
+    result,
+    estadoAsistenciaResultado
   );
 
 
@@ -779,6 +835,13 @@ export async function getMisAsistenciasWeeklyReport(
         'pendiente'
     ).length;
 
+  const pendientesRevision =
+    asistencias.filter(
+      (a) =>
+        a.estado ===
+        'INVALIDA_PENDIENTE_REVISION'
+    ).length;
+
 
   const aprobadas =
     asistencias.filter(
@@ -820,6 +883,9 @@ export async function getMisAsistenciasWeeklyReport(
 
       pendientes,
 
+
+      pendientes_revision:
+        pendientesRevision,
       aprobadas,
 
       rechazadas,
@@ -847,6 +913,26 @@ export async function getMisAsistenciasWeeklyReport(
 
           estado:
             a.estado,
+
+          ...(Object.prototype.hasOwnProperty.call(
+            a,
+            'duracion_minima_aplicada_minutos'
+          )
+            ? {
+                duracion_minima_aplicada_minutos:
+                  a.duracion_minima_aplicada_minutos,
+              }
+            : {}),
+
+          ...(Object.prototype.hasOwnProperty.call(
+            a,
+            'duracion_registrada_segundos'
+          )
+            ? {
+                duracion_registrada_segundos:
+                  a.duracion_registrada_segundos,
+              }
+            : {}),
         })
       ),
   };
@@ -858,11 +944,13 @@ export async function getMisAsistenciasWeeklyReport(
 // ============================================================
 
 export async function approveAsistencia(
-  id: number
+  id: number,
+  adminUsuarioId?: number,
+  motivo?: string
 ) {
 
   if (
-    !id ||
+    !Number.isInteger(id) ||
     id <= 0
   ) {
     throw new AppError(
@@ -872,49 +960,966 @@ export async function approveAsistencia(
   }
 
 
-  const asistencia =
-    await findAsistenciaById(
-      id
-    );
-
-
-  if (!asistencia) {
-    throw new AppError(
-      'Asistencia no encontrada',
-      404
-    );
-  }
-
-
   if (
-    asistencia.estado !==
-    'pendiente'
+    !Number.isInteger(
+      adminUsuarioId
+    ) ||
+    Number(
+      adminUsuarioId
+    ) <= 0
   ) {
     throw new AppError(
-      'Solo se pueden aprobar asistencias pendientes',
-      409
+      'Administrador requerido para registrar la revisión',
+      400
     );
   }
 
 
-  await setAsistenciaEstado(
-    id,
-    'aprobada'
-  );
-}
+  const motivoNormalizado =
+    String(
+      motivo ?? ''
+    ).trim();
 
+
+  const connection =
+    await pool.getConnection();
+
+
+  try {
+
+    await connection
+      .beginTransaction();
+
+
+    const [
+      rows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            usuario_id,
+            fecha,
+            hora_entrada,
+            hora_salida,
+            estado
+          FROM asistencias
+          WHERE id = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
+
+
+    const asistencia =
+      (
+        rows as any[]
+      )[0] ||
+      null;
+
+
+    if (!asistencia) {
+      throw new AppError(
+        'Asistencia no encontrada',
+        404
+      );
+    }
+
+
+    const estadoAnterior =
+      String(
+        asistencia.estado ??
+        ''
+      );
+
+
+    if (
+      estadoAnterior !==
+        'pendiente' &&
+      estadoAnterior !==
+        'INVALIDA_PENDIENTE_REVISION'
+    ) {
+      throw new AppError(
+        'Solo se pueden aprobar asistencias pendientes o pendientes de revisión',
+        409
+      );
+    }
+
+
+    if (
+      estadoAnterior ===
+        'INVALIDA_PENDIENTE_REVISION' &&
+      !motivoNormalizado
+    ) {
+      throw new AppError(
+        'Motivo requerido para revisar una asistencia inválida',
+        400
+      );
+    }
+
+
+    const [
+      updateResult,
+    ] =
+      await connection.query(
+        `
+          UPDATE asistencias
+          SET
+            estado = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        [
+          'aprobada',
+          id,
+        ]
+      );
+
+
+    if (
+      Number(
+        (
+          updateResult as any
+        ).affectedRows ||
+        0
+      ) !== 1
+    ) {
+      throw new AppError(
+        'No se pudo actualizar la asistencia',
+        409
+      );
+    }
+
+
+    await connection.query(
+      `
+        INSERT INTO asistencia_revisiones (
+          asistencia_id,
+          admin_usuario_id,
+          accion,
+          motivo,
+          estado_anterior,
+          estado_nuevo,
+          hora_entrada_anterior,
+          hora_salida_anterior,
+          hora_entrada_nueva,
+          hora_salida_nueva
+        )
+        VALUES (
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?
+        )
+      `,
+      [
+        id,
+        Number(
+          adminUsuarioId
+        ),
+        'APROBAR',
+        motivoNormalizado ||
+          null,
+        estadoAnterior,
+        'aprobada',
+        asistencia
+          .hora_entrada ??
+          null,
+        asistencia
+          .hora_salida ??
+          null,
+        asistencia
+          .hora_entrada ??
+          null,
+        asistencia
+          .hora_salida ??
+          null,
+      ]
+    );
+
+
+    await connection
+      .commit();
+
+  } catch (error) {
+
+    await connection
+      .rollback();
+
+    throw error;
+
+  } finally {
+
+    connection
+      .release();
+  }
+}
 
 // ============================================================
 // RECHAZAR
 // ============================================================
 
 export async function rejectAsistencia(
-  id: number
+  id: number,
+  adminUsuarioId?: number,
+  motivo?: string
 ) {
 
   if (
-    !id ||
+    !Number.isInteger(id) ||
     id <= 0
+  ) {
+    throw new AppError(
+      'ID de asistencia inválido',
+      400
+    );
+  }
+
+
+  if (
+    !Number.isInteger(
+      adminUsuarioId
+    ) ||
+    Number(
+      adminUsuarioId
+    ) <= 0
+  ) {
+    throw new AppError(
+      'Administrador requerido para registrar la revisión',
+      400
+    );
+  }
+
+
+  const motivoNormalizado =
+    String(
+      motivo ?? ''
+    ).trim();
+
+
+  const connection =
+    await pool.getConnection();
+
+
+  try {
+
+    await connection
+      .beginTransaction();
+
+
+    const [
+      rows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            usuario_id,
+            fecha,
+            hora_entrada,
+            hora_salida,
+            estado
+          FROM asistencias
+          WHERE id = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
+
+
+    const asistencia =
+      (
+        rows as any[]
+      )[0] ||
+      null;
+
+
+    if (!asistencia) {
+      throw new AppError(
+        'Asistencia no encontrada',
+        404
+      );
+    }
+
+
+    const estadoAnterior =
+      String(
+        asistencia.estado ??
+        ''
+      );
+
+
+    if (
+      estadoAnterior !==
+        'pendiente' &&
+      estadoAnterior !==
+        'INVALIDA_PENDIENTE_REVISION'
+    ) {
+      throw new AppError(
+        'Solo se pueden rechazar asistencias pendientes o pendientes de revisión',
+        409
+      );
+    }
+
+
+    if (
+      estadoAnterior ===
+        'INVALIDA_PENDIENTE_REVISION' &&
+      !motivoNormalizado
+    ) {
+      throw new AppError(
+        'Motivo requerido para revisar una asistencia inválida',
+        400
+      );
+    }
+
+
+    const [
+      updateResult,
+    ] =
+      await connection.query(
+        `
+          UPDATE asistencias
+          SET
+            estado = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        [
+          'rechazada',
+          id,
+        ]
+      );
+
+
+    if (
+      Number(
+        (
+          updateResult as any
+        ).affectedRows ||
+        0
+      ) !== 1
+    ) {
+      throw new AppError(
+        'No se pudo actualizar la asistencia',
+        409
+      );
+    }
+
+
+    await connection.query(
+      `
+        INSERT INTO asistencia_revisiones (
+          asistencia_id,
+          admin_usuario_id,
+          accion,
+          motivo,
+          estado_anterior,
+          estado_nuevo,
+          hora_entrada_anterior,
+          hora_salida_anterior,
+          hora_entrada_nueva,
+          hora_salida_nueva
+        )
+        VALUES (
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?
+        )
+      `,
+      [
+        id,
+        Number(
+          adminUsuarioId
+        ),
+        'RECHAZAR',
+        motivoNormalizado ||
+          null,
+        estadoAnterior,
+        'rechazada',
+        asistencia
+          .hora_entrada ??
+          null,
+        asistencia
+          .hora_salida ??
+          null,
+        asistencia
+          .hora_entrada ??
+          null,
+        asistencia
+          .hora_salida ??
+          null,
+      ]
+    );
+
+
+    await connection
+      .commit();
+
+  } catch (error) {
+
+    await connection
+      .rollback();
+
+    throw error;
+
+  } finally {
+
+    connection
+      .release();
+  }
+}
+
+
+// ============================================================
+// CAMBIO3_SERVICE_JUSTIFICAR_ASISTENCIA
+// JUSTIFICAR
+// ============================================================
+
+export async function justifyAsistencia(
+  id: number,
+  adminUsuarioId?: number,
+  motivo?: string
+) {
+
+  if (
+    !Number.isInteger(id) ||
+    id <= 0
+  ) {
+    throw new AppError(
+      'ID de asistencia inválido',
+      400
+    );
+  }
+
+
+  if (
+    !Number.isInteger(
+      adminUsuarioId
+    ) ||
+    Number(
+      adminUsuarioId
+    ) <= 0
+  ) {
+    throw new AppError(
+      'Administrador requerido para registrar la revisión',
+      400
+    );
+  }
+
+
+  const motivoNormalizado =
+    String(
+      motivo ?? ''
+    ).trim();
+
+
+  if (!motivoNormalizado) {
+    throw new AppError(
+      'Motivo requerido para justificar una asistencia inválida',
+      400
+    );
+  }
+
+
+  const connection =
+    await pool.getConnection();
+
+
+  try {
+
+    await connection
+      .beginTransaction();
+
+
+    const [
+      rows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            usuario_id,
+            fecha,
+            hora_entrada,
+            hora_salida,
+            estado
+          FROM asistencias
+          WHERE id = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
+
+
+    const asistencia =
+      (
+        rows as any[]
+      )[0] ||
+      null;
+
+
+    if (!asistencia) {
+      throw new AppError(
+        'Asistencia no encontrada',
+        404
+      );
+    }
+
+
+    const estadoAnterior =
+      String(
+        asistencia.estado ??
+        ''
+      );
+
+
+    if (
+      estadoAnterior !==
+        'INVALIDA_PENDIENTE_REVISION'
+    ) {
+      throw new AppError(
+        'Solo se pueden justificar asistencias pendientes de revisión',
+        409
+      );
+    }
+
+
+    const [
+      updateResult,
+    ] =
+      await connection.query(
+        `
+          UPDATE asistencias
+          SET
+            estado = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        [
+          'aprobada',
+          id,
+        ]
+      );
+
+
+    if (
+      Number(
+        (
+          updateResult as any
+        ).affectedRows ||
+        0
+      ) !== 1
+    ) {
+      throw new AppError(
+        'No se pudo actualizar la asistencia',
+        409
+      );
+    }
+
+
+    await connection.query(
+      `
+        INSERT INTO asistencia_revisiones (
+          asistencia_id,
+          admin_usuario_id,
+          accion,
+          motivo,
+          estado_anterior,
+          estado_nuevo,
+          hora_entrada_anterior,
+          hora_salida_anterior,
+          hora_entrada_nueva,
+          hora_salida_nueva
+        )
+        VALUES (
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?
+        )
+      `,
+      [
+        id,
+        Number(
+          adminUsuarioId
+        ),
+        'JUSTIFICAR',
+        motivoNormalizado,
+        estadoAnterior,
+        'aprobada',
+        asistencia
+          .hora_entrada ??
+          null,
+        asistencia
+          .hora_salida ??
+          null,
+        asistencia
+          .hora_entrada ??
+          null,
+        asistencia
+          .hora_salida ??
+          null,
+      ]
+    );
+
+
+    await connection
+      .commit();
+
+  } catch (error) {
+
+    await connection
+      .rollback();
+
+    throw error;
+
+  } finally {
+
+    connection
+      .release();
+  }
+}
+
+
+// ============================================================
+// CAMBIO3_SERVICE_CORREGIR_ASISTENCIA
+// CORREGIR
+// ============================================================
+
+export async function correctAsistencia(
+  id: number,
+  adminUsuarioId: number | undefined,
+  motivo: string | undefined,
+  horaEntradaNueva: string,
+  horaSalidaNueva: string
+) {
+
+  if (
+    !Number.isInteger(id) ||
+    id <= 0
+  ) {
+    throw new AppError(
+      'ID de asistencia inválido',
+      400
+    );
+  }
+
+
+  if (
+    !Number.isInteger(
+      adminUsuarioId
+    ) ||
+    Number(
+      adminUsuarioId
+    ) <= 0
+  ) {
+    throw new AppError(
+      'Administrador requerido para registrar la revisión',
+      400
+    );
+  }
+
+
+  const motivoNormalizado =
+    String(
+      motivo ?? ''
+    ).trim();
+
+
+  if (!motivoNormalizado) {
+    throw new AppError(
+      'Motivo requerido para corregir una asistencia inválida',
+      400
+    );
+  }
+
+
+  const horaEntradaNormalizada =
+    String(
+      horaEntradaNueva ?? ''
+    ).trim();
+
+
+  const horaSalidaNormalizada =
+    String(
+      horaSalidaNueva ?? ''
+    ).trim();
+
+
+  if (
+    !horaEntradaNormalizada ||
+    !horaSalidaNormalizada
+  ) {
+    throw new AppError(
+      'Hora de entrada y hora de salida son requeridas para corregir la asistencia',
+      400
+    );
+  }
+
+
+  const connection =
+    await pool.getConnection();
+
+
+  try {
+
+    await connection
+      .beginTransaction();
+
+
+    const [
+      rows,
+    ] =
+      await connection.query(
+        `
+          SELECT
+            id,
+            usuario_id,
+            fecha,
+            hora_entrada,
+            hora_salida,
+            estado,
+            duracion_minima_aplicada_minutos,
+            duracion_registrada_segundos
+          FROM asistencias
+          WHERE id = ?
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [
+          id,
+        ]
+      );
+
+
+    const asistencia =
+      (
+        rows as any[]
+      )[0] ||
+      null;
+
+
+    if (!asistencia) {
+      throw new AppError(
+        'Asistencia no encontrada',
+        404
+      );
+    }
+
+
+    const estadoAnterior =
+      String(
+        asistencia.estado ??
+        ''
+      );
+
+
+    if (
+      estadoAnterior !==
+        'INVALIDA_PENDIENTE_REVISION'
+    ) {
+      throw new AppError(
+        'Solo se pueden corregir asistencias pendientes de revisión',
+        409
+      );
+    }
+
+
+    const duracionMinimaAplicada =
+      Number(
+        asistencia
+          .duracion_minima_aplicada_minutos
+      );
+
+
+    if (
+      !Number.isFinite(
+        duracionMinimaAplicada
+      ) ||
+      duracionMinimaAplicada <= 0
+    ) {
+      throw new AppError(
+        'La asistencia no tiene una política de duración válida aplicada',
+        409
+      );
+    }
+
+
+    let evaluacionDuracion;
+
+    try {
+
+      evaluacionDuracion =
+        evaluarDuracionAsistencia({
+          horaEntrada:
+            horaEntradaNormalizada,
+
+          horaSalida:
+            horaSalidaNormalizada,
+
+          duracionMinimaMinutos:
+            duracionMinimaAplicada,
+        });
+
+    } catch {
+
+      throw new AppError(
+        'Las horas corregidas no son válidas',
+        400
+      );
+    }
+
+
+    const [
+      updateResult,
+    ] =
+      await connection.query(
+        `
+          UPDATE asistencias
+          SET
+            hora_entrada = ?,
+            hora_salida = ?,
+            estado = ?,
+            duracion_minima_aplicada_minutos = ?,
+            duracion_registrada_segundos = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `,
+        [
+          horaEntradaNormalizada,
+          horaSalidaNormalizada,
+          evaluacionDuracion.estadoSalida,
+          duracionMinimaAplicada,
+          evaluacionDuracion.duracionSegundos,
+          id,
+        ]
+      );
+
+
+    if (
+      Number(
+        (
+          updateResult as any
+        ).affectedRows ||
+        0
+      ) !== 1
+    ) {
+      throw new AppError(
+        'No se pudo actualizar la asistencia',
+        409
+      );
+    }
+
+
+    await connection.query(
+      `
+        INSERT INTO asistencia_revisiones (
+          asistencia_id,
+          admin_usuario_id,
+          accion,
+          motivo,
+          estado_anterior,
+          estado_nuevo,
+          hora_entrada_anterior,
+          hora_salida_anterior,
+          hora_entrada_nueva,
+          hora_salida_nueva
+        )
+        VALUES (
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?
+        )
+      `,
+      [
+        id,
+        Number(
+          adminUsuarioId
+        ),
+        'CORREGIR',
+        motivoNormalizado,
+        estadoAnterior,
+        evaluacionDuracion.estadoSalida,
+        asistencia
+          .hora_entrada ??
+          null,
+        asistencia
+          .hora_salida ??
+          null,
+        horaEntradaNormalizada,
+        horaSalidaNormalizada,
+      ]
+    );
+
+
+    await connection
+      .commit();
+
+  } catch (error) {
+
+    await connection
+      .rollback();
+
+    throw error;
+
+  } finally {
+
+    connection
+      .release();
+  }
+}
+
+
+// ============================================================
+// CAMBIO3_SERVICE_HISTORIAL_REVISIONES
+// CONSULTAR HISTORIAL DURABLE DE UNA ASISTENCIA
+// ============================================================
+
+export async function getAsistenciaRevisiones(
+  asistenciaId: number
+) {
+
+  if (
+    !Number.isInteger(
+      asistenciaId
+    ) ||
+    asistenciaId <= 0
   ) {
     throw new AppError(
       'ID de asistencia inválido',
@@ -925,7 +1930,7 @@ export async function rejectAsistencia(
 
   const asistencia =
     await findAsistenciaById(
-      id
+      asistenciaId
     );
 
 
@@ -937,19 +1942,7 @@ export async function rejectAsistencia(
   }
 
 
-  if (
-    asistencia.estado !==
-    'pendiente'
-  ) {
-    throw new AppError(
-      'Solo se pueden rechazar asistencias pendientes',
-      409
-    );
-  }
-
-
-  await setAsistenciaEstado(
-    id,
-    'rechazada'
+  return listAsistenciaRevisiones(
+    asistenciaId
   );
 }

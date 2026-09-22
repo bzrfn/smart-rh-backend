@@ -4,12 +4,15 @@ import { requireRole } from '../../middlewares/requireRole.js';
 import { requireModule } from '../../middlewares/requireModule.js';
 import {
   approveController,
+  correctController,
   cleanupQrController,
   generateQrController,
   listAllController,
   listMineController,
   listMineWeeklyController,
   listPendientesController,
+  listRevisionesController,
+  justifyController,
   rejectController,
   scanController,
   weeklyReportMineController,
@@ -89,4 +92,28 @@ asistenciaRoutes.patch(
   authJwt,
   requireRole('admin'),
   rejectController
+);
+
+
+asistenciaRoutes.patch(
+  '/:id/justify',
+  authJwt,
+  requireRole('admin'),
+  justifyController
+);
+
+
+asistenciaRoutes.patch(
+  '/:id/correct',
+  authJwt,
+  requireRole('admin'),
+  correctController
+);
+
+
+asistenciaRoutes.get(
+  '/:id/revisiones',
+  authJwt,
+  requireRole('admin'),
+  listRevisionesController
 );

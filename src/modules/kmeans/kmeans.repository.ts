@@ -156,6 +156,13 @@ function buildAsistenciaMap(asistencias: Row[]) {
 
     const estado = normalizeText(row.estado);
 
+    // El registro aún no tiene resolución administrativa.
+    // No debe modificar variables ni tasas del modelo K-Means
+    // hasta contar con un estado definitivo.
+    if (estado === 'invalida_pendiente_revision') {
+      continue;
+    }
+
     current.total_asistencias += 1;
 
     if (estado === 'aprobada' || estado === 'aprobado' || estado === 'approved') {

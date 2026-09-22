@@ -519,6 +519,17 @@ describe(
           )
           .mockResolvedValueOnce(
             [
+              [
+                {
+                  duracion_minima_minutos:
+                    2,
+                },
+              ],
+              [],
+            ]
+          )
+          .mockResolvedValueOnce(
+            [
               {
                 affectedRows:
                   1,
@@ -566,11 +577,24 @@ describe(
         ).toHaveBeenNthCalledWith(
           2,
           expect.stringContaining(
+            'FROM asistencia_configuracion'
+          )
+        );
+
+
+        expect(
+          query
+        ).toHaveBeenNthCalledWith(
+          3,
+          expect.stringContaining(
             'UPDATE asistencias'
           ),
           [
             '23:24:16',
             'QR-TEST',
+            'pendiente',
+            2,
+            12256,
             91,
           ]
         );
@@ -715,6 +739,616 @@ describe(
         ).toHaveBeenCalledTimes(
           1
         );
+      }
+    );
+  }
+);
+
+
+// CAMBIO3_TDD_SALIDA_TEMPRANA
+describe(
+  'Cambio #3 - validacion automatica de salida',
+  () => {
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      jest.useFakeTimers();
+
+      // 09:01:30 hora de Mexico (UTC-6).
+      jest.setSystemTime(
+        new Date(
+          '2026-09-13T15:01:30.000Z'
+        )
+      );
+
+      findQrMock
+        .mockResolvedValue({
+          _id:
+            'qr-salida-temprana',
+
+          token:
+            'QR-SALIDA-TEMPRANA',
+
+          fecha_expiracion:
+            new Date(
+              '2026-09-13T15:03:30.000Z'
+            ),
+
+          usos:
+            [],
+        });
+
+      updateQrMock
+        .mockResolvedValue({
+          acknowledged:
+            true,
+
+          modifiedCount:
+            1,
+        });
+    });
+
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+
+    test(
+      'registra una salida menor al minimo como INVALIDA_PENDIENTE_REVISION sin rechazarla',
+      async () => {
+
+        const query =
+          jest.fn();
+
+        query
+          // 1. Asistencia del dia bloqueada con FOR UPDATE.
+          .mockResolvedValueOnce(
+            [
+              [
+                {
+                  id:
+                    91,
+
+                  usuario_id:
+                    22,
+
+                  fecha:
+                    '2026-09-13',
+
+                  hora_entrada:
+                    '09:00:00',
+
+                  hora_salida:
+                    null,
+
+                  estado:
+                    'pendiente',
+
+                  qr_token:
+                    'QR-ENTRADA',
+                },
+              ],
+              [],
+            ]
+          )
+
+          // 2. Politica activa configurable.
+          .mockResolvedValueOnce(
+            [
+              [
+                {
+                  duracion_minima_minutos:
+                    2,
+                },
+              ],
+              [],
+            ]
+          )
+
+          // 3. Escritura de la salida evaluada.
+          .mockResolvedValueOnce(
+            [
+              {
+                affectedRows:
+                  1,
+              },
+              [],
+            ]
+          );
+
+
+        const connection =
+          createConnectionMock(
+            query
+          );
+
+
+        getConnectionMock
+          .mockResolvedValue(
+            connection
+          );
+
+
+        const result =
+          await scanQr(
+            22,
+            'QR-SALIDA-TEMPRANA'
+          );
+
+
+        // La salida temprana NO debe rechazarse.
+        expect(
+          result
+        ).toMatchObject({
+          id:
+            91,
+
+          tipo:
+            'salida',
+
+          fecha:
+            '2026-09-13',
+        });
+
+
+        // La politica debe consultarse dentro del mismo
+        // flujo transaccional de la asistencia.
+        expect(
+          query
+        ).toHaveBeenNthCalledWith(
+          2,
+          expect.stringContaining(
+            'FROM asistencia_configuracion'
+          )
+        );
+
+
+        // 09:00:00 -> 09:01:30 = 90 segundos.
+        // Politica activa = 2 minutos.
+        // Como 90 < 120, queda pendiente de revision.
+        expect(
+          query
+        ).toHaveBeenNthCalledWith(
+          3,
+          expect.stringContaining(
+            'duracion_minima_aplicada_minutos'
+          ),
+          [
+            '09:01:30',
+            'QR-SALIDA-TEMPRANA',
+            'INVALIDA_PENDIENTE_REVISION',
+            2,
+            90,
+            91,
+          ]
+        );
+
+
+        expect(
+          connection.commit
+        ).toHaveBeenCalledTimes(
+          1
+        );
+
+
+        expect(
+          connection.rollback
+        ).not
+          .toHaveBeenCalled();
+      }
+    );
+  }
+);
+
+
+// CAMBIO3_LIMITE_EXACTO_120_SEGUNDOS
+describe(
+  'Cambio #3 - limite exacto de duracion',
+  () => {
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      jest.useFakeTimers();
+
+      // 09:02:00 hora de Mexico (UTC-6).
+      jest.setSystemTime(
+        new Date(
+          '2026-09-13T15:02:00.000Z'
+        )
+      );
+
+      findQrMock
+        .mockResolvedValue({
+          _id:
+            'qr-limite-exacto',
+
+          token:
+            'QR-LIMITE-EXACTO',
+
+          fecha_expiracion:
+            new Date(
+              '2026-09-13T15:04:00.000Z'
+            ),
+
+          usos:
+            [],
+        });
+
+      updateQrMock
+        .mockResolvedValue({
+          acknowledged:
+            true,
+
+          modifiedCount:
+            1,
+        });
+    });
+
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+
+    test(
+      'una salida exactamente a los 2 minutos conserva estado pendiente',
+      async () => {
+
+        const query =
+          jest.fn();
+
+        query
+          .mockResolvedValueOnce(
+            [
+              [
+                {
+                  id:
+                    91,
+
+                  usuario_id:
+                    22,
+
+                  fecha:
+                    '2026-09-13',
+
+                  hora_entrada:
+                    '09:00:00',
+
+                  hora_salida:
+                    null,
+
+                  estado:
+                    'pendiente',
+
+                  qr_token:
+                    'QR-ENTRADA',
+                },
+              ],
+              [],
+            ]
+          )
+
+          .mockResolvedValueOnce(
+            [
+              [
+                {
+                  duracion_minima_minutos:
+                    2,
+                },
+              ],
+              [],
+            ]
+          )
+
+          .mockResolvedValueOnce(
+            [
+              {
+                affectedRows:
+                  1,
+              },
+              [],
+            ]
+          );
+
+
+        const connection =
+          createConnectionMock(
+            query
+          );
+
+
+        getConnectionMock
+          .mockResolvedValue(
+            connection
+          );
+
+
+        const result =
+          await scanQr(
+            22,
+            'QR-LIMITE-EXACTO'
+          );
+
+
+        expect(
+          result
+        ).toMatchObject({
+          id:
+            91,
+
+          tipo:
+            'salida',
+
+          fecha:
+            '2026-09-13',
+        });
+
+
+        expect(
+          query
+        ).toHaveBeenNthCalledWith(
+          2,
+          expect.stringContaining(
+            'FROM asistencia_configuracion'
+          )
+        );
+
+
+        expect(
+          query
+        ).toHaveBeenNthCalledWith(
+          3,
+          expect.stringContaining(
+            'UPDATE asistencias'
+          ),
+          [
+            '09:02:00',
+            'QR-LIMITE-EXACTO',
+            'pendiente',
+            2,
+            120,
+            91,
+          ]
+        );
+
+
+        expect(
+          connection.commit
+        ).toHaveBeenCalledTimes(
+          1
+        );
+
+
+        expect(
+          connection.rollback
+        ).not
+          .toHaveBeenCalled();
+      }
+    );
+  }
+);
+
+
+// CAMBIO3_TDD_SALIDA_INVALIDA_SIN_DIA_COMPLETO
+describe(
+  'Cambio #3 - notificaciones de salida pendiente de revision',
+  () => {
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+
+      jest.useFakeTimers();
+
+      // 09:01:30 hora de México.
+      jest.setSystemTime(
+        new Date(
+          '2026-09-13T15:01:30.000Z'
+        )
+      );
+
+
+      findQrMock
+        .mockResolvedValue({
+          _id:
+            'qr-salida-invalida-notificacion',
+
+          token:
+            'QR-SALIDA-INVALIDA-NOTIFICACION',
+
+          fecha_expiracion:
+            new Date(
+              '2026-09-13T15:03:30.000Z'
+            ),
+
+          valido_hasta:
+            new Date(
+              '2026-09-13T15:03:30.000Z'
+            ),
+
+          usos:
+            [],
+        });
+
+
+      updateQrMock
+        .mockResolvedValue({
+          acknowledged:
+            true,
+
+          modifiedCount:
+            1,
+        });
+    });
+
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+
+    test(
+      'no genera DIA_COMPLETO cuando la salida queda INVALIDA_PENDIENTE_REVISION',
+      async () => {
+
+        const notificaciones =
+          jest.requireMock(
+            '../../src/modules/notificaciones/notificaciones.service.js'
+          ) as {
+            crearNotificacionDiaCompleto:
+              jest.Mock;
+
+            eliminarNotificacionesAsistenciaUsuario:
+              jest.Mock;
+          };
+
+
+        const query =
+          jest.fn();
+
+
+        query
+          // 1. Asistencia de hoy.
+          .mockResolvedValueOnce(
+            [
+              [
+                {
+                  id:
+                    91,
+
+                  usuario_id:
+                    22,
+
+                  fecha:
+                    '2026-09-13',
+
+                  hora_entrada:
+                    '09:00:00',
+
+                  hora_salida:
+                    null,
+
+                  estado:
+                    'pendiente',
+
+                  qr_token:
+                    'QR-ENTRADA',
+                },
+              ],
+              [],
+            ]
+          )
+
+          // 2. Política activa = 2 minutos.
+          .mockResolvedValueOnce(
+            [
+              [
+                {
+                  duracion_minima_minutos:
+                    2,
+                },
+              ],
+              [],
+            ]
+          )
+
+          // 3. UPDATE de la salida.
+          .mockResolvedValueOnce(
+            [
+              {
+                affectedRows:
+                  1,
+              },
+              [],
+            ]
+          );
+
+
+        const connection =
+          createConnectionMock(
+            query
+          );
+
+
+        getConnectionMock
+          .mockResolvedValue(
+            connection
+          );
+
+
+        const result =
+          await scanQr(
+            22,
+            'QR-SALIDA-INVALIDA-NOTIFICACION'
+          );
+
+
+        expect(
+          result
+        ).toMatchObject({
+          id:
+            91,
+
+          tipo:
+            'salida',
+
+          fecha:
+            '2026-09-13',
+        });
+
+
+        // Confirmamos que SQL sí marcó la salida para revisión.
+        expect(
+          query
+        ).toHaveBeenNthCalledWith(
+          3,
+          expect.stringContaining(
+            'UPDATE asistencias'
+          ),
+          [
+            '09:01:30',
+            'QR-SALIDA-INVALIDA-NOTIFICACION',
+            'INVALIDA_PENDIENTE_REVISION',
+            2,
+            90,
+            91,
+          ]
+        );
+
+
+        // Regla nueva:
+        // una salida pendiente de revisión NO equivale
+        // a una jornada válida completada.
+        expect(
+          notificaciones
+            .crearNotificacionDiaCompleto
+        ).not
+          .toHaveBeenCalled();
+
+
+        // El post-proceso puede seguir limpiando
+        // recordatorios obsoletos.
+        expect(
+          notificaciones
+            .eliminarNotificacionesAsistenciaUsuario
+        ).toHaveBeenCalledWith(
+          22
+        );
+
+
+        expect(
+          connection.commit
+        ).toHaveBeenCalledTimes(
+          1
+        );
+
+
+        expect(
+          connection.rollback
+        ).not
+          .toHaveBeenCalled();
       }
     );
   }

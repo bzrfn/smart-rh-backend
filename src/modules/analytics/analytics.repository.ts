@@ -159,6 +159,7 @@ function normalizeEstado(value: any) {
 
   if (!estado) return 'sin_estado';
 
+  if (estado === 'invalida_pendiente_revision') return 'pendiente_revision';
   if (estado.includes('aprob')) return 'aprobada';
   if (estado.includes('pend')) return 'pendiente';
   if (estado.includes('rech')) return 'rechazada';
@@ -203,6 +204,7 @@ function buildAsistenciaPorFecha(asistencias: Row[]) {
       asistencias: number;
       aprobadas: number;
       pendientes: number;
+      pendientes_revision: number;
       rechazadas: number;
     }
   >();
@@ -216,6 +218,7 @@ function buildAsistenciaPorFecha(asistencias: Row[]) {
       asistencias: 0,
       aprobadas: 0,
       pendientes: 0,
+      pendientes_revision: 0,
       rechazadas: 0,
     };
 
@@ -223,6 +226,7 @@ function buildAsistenciaPorFecha(asistencias: Row[]) {
 
     if (estado === 'aprobada') current.aprobadas += 1;
     if (estado === 'pendiente') current.pendientes += 1;
+    if (estado === 'pendiente_revision') current.pendientes_revision += 1;
     if (estado === 'rechazada') current.rechazadas += 1;
 
     map.set(fecha, current);
@@ -324,6 +328,7 @@ function buildAsistenciaVsNomina(
       total: number;
       aprobadas: number;
       pendientes: number;
+      pendientes_revision: number;
       rechazadas: number;
     }
   >();
@@ -341,6 +346,7 @@ function buildAsistenciaVsNomina(
       total: 0,
       aprobadas: 0,
       pendientes: 0,
+      pendientes_revision: 0,
       rechazadas: 0,
     };
 
@@ -348,6 +354,7 @@ function buildAsistenciaVsNomina(
 
     if (estado === 'aprobada') current.aprobadas += 1;
     if (estado === 'pendiente') current.pendientes += 1;
+    if (estado === 'pendiente_revision') current.pendientes_revision += 1;
     if (estado === 'rechazada') current.rechazadas += 1;
 
     asistenciaMap.set(usuarioId, current);
@@ -386,6 +393,7 @@ function buildAsistenciaVsNomina(
         total: 0,
         aprobadas: 0,
         pendientes: 0,
+        pendientes_revision: 0,
         rechazadas: 0,
       };
 
@@ -401,7 +409,10 @@ function buildAsistenciaVsNomina(
         tasa_asistencia: Number(tasaAprobacion.toFixed(4)),
         nomina_promedio: Number(promedioNomina.toFixed(2)),
         asistencias: asistencia.total,
-        incidencias: asistencia.pendientes + asistencia.rechazadas,
+        incidencias:
+          asistencia.pendientes +
+          asistencia.pendientes_revision +
+          asistencia.rechazadas,
         solicitudes_vacaciones: vacacionesMap.get(usuarioId) || 0,
       };
     })
@@ -518,6 +529,10 @@ export async function obtenerResumenVisualRepository() {
     (row) => normalizeEstado(row.estado) === 'pendiente'
   ).length;
 
+  const asistenciasPendientesRevision = asistenciasFiltradas.filter(
+    (row) => normalizeEstado(row.estado) === 'pendiente_revision'
+  ).length;
+
   const asistenciasRechazadas = asistenciasFiltradas.filter(
     (row) => normalizeEstado(row.estado) === 'rechazada'
   ).length;
@@ -541,7 +556,10 @@ export async function obtenerResumenVisualRepository() {
     (row) => normalizeEstado(row.estado) === 'activo'
   ).length;
 
-  const totalIncidencias = asistenciasPendientes + asistenciasRechazadas;
+  const totalIncidencias =
+    asistenciasPendientes +
+    asistenciasPendientesRevision +
+    asistenciasRechazadas;
 
   const tasaAprobacion =
     totalAsistencias > 0 ? asistenciasAprobadas / totalAsistencias : 0;
@@ -551,6 +569,7 @@ export async function obtenerResumenVisualRepository() {
     asistenciasPorEstado: buildEstadoChart(asistenciasFiltradas, [
       'aprobada',
       'pendiente',
+      'pendiente_revision',
       'rechazada',
     ]),
     asistenciasPorFecha: buildAsistenciaPorFecha(asistenciasFiltradas),
@@ -592,7 +611,8 @@ export async function obtenerResumenVisualRepository() {
     {
       nombre: 'Asistencias por estado',
       tipo: 'Gráfica de barras',
-      pregunta: '¿Cuántas asistencias fueron aprobadas, pendientes o rechazadas?',
+      pregunta:
+        '¿Cuántas asistencias fueron aprobadas, pendientes, pendientes de revisión o rechazadas?',
       justificacion:
         'Se utiliza barras porque permite comparar categorías de forma clara.',
     },
@@ -634,6 +654,7 @@ export async function obtenerResumenVisualRepository() {
       totalAsistencias,
       asistenciasAprobadas,
       asistenciasPendientes,
+      asistenciasPendientesRevision,
       asistenciasRechazadas,
       tasaAprobacion: Number(tasaAprobacion.toFixed(4)),
       promedioNomina: Number(promedioNomina.toFixed(2)),

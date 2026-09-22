@@ -265,19 +265,34 @@ export async function generarRecordatorioAsistenciaLogin(usuario_id: number) {
       return;
     }
 
-    if (asistencia.hora_entrada && asistencia.hora_salida) {
-      const mensaje = getDiaCompletoMessage(hora);
+    if (
+      asistencia.hora_entrada &&
+      asistencia.hora_salida &&
+      asistencia.estado !==
+        'INVALIDA_PENDIENTE_REVISION'
+    ) {
+      const mensaje =
+        getDiaCompletoMessage(
+          hora
+        );
 
       await crearNotificacion({
         usuario_id,
-        tipo: 'DIA_COMPLETO',
-        titulo: mensaje.titulo,
-        mensaje: mensaje.mensaje,
+        tipo:
+          'DIA_COMPLETO',
+        titulo:
+          mensaje.titulo,
+        mensaje:
+          mensaje.mensaje,
         metadata: {
-          origen: 'login',
-          asistencia_id: asistencia.id,
-          hora_entrada: asistencia.hora_entrada,
-          hora_salida: asistencia.hora_salida,
+          origen:
+            'login',
+          asistencia_id:
+            asistencia.id,
+          hora_entrada:
+            asistencia.hora_entrada,
+          hora_salida:
+            asistencia.hora_salida,
           fecha,
         },
       });
