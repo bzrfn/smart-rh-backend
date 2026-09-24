@@ -114,6 +114,41 @@ export const env = {
 
 
   // ==========================================================
+  // SESION DE TERMINAL DE ASISTENCIA
+  // ==========================================================
+
+  terminalAccess: {
+    enabled:
+      String(
+        process.env.TERMINAL_ACCESS_ENABLED ||
+        'false'
+      ).toLowerCase() === 'true',
+
+    attendanceEnabled:
+      String(
+        process.env.TERMINAL_ATTENDANCE_ENABLED ||
+        'false'
+      ).toLowerCase() === 'true',
+
+    jwtSecret:
+      process.env.TERMINAL_ACCESS_JWT_SECRET ||
+      '',
+
+    hmacSecret:
+      process.env.TERMINAL_ACCESS_HMAC_SECRET ||
+      '',
+
+    approverEmail:
+      process.env.TERMINAL_ACCESS_APPROVER_EMAIL ||
+      '',
+
+    expiresIn:
+      process.env.TERMINAL_ACCESS_JWT_EXPIRES_IN ||
+      '8h',
+  },
+
+
+  // ==========================================================
   // RECUPERACION DE CONTRASENA
   // ==========================================================
 

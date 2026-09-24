@@ -36,6 +36,10 @@ import {
 } from './middlewares/errorHandler.js';
 
 
+import {
+  terminalRoutes,
+} from './modules/terminal/terminal.routes.js';
+
 export const app = express();
 
 
@@ -360,6 +364,8 @@ app.get(
 // ============================================================
 // RUTAS PRINCIPALES
 // ============================================================
+
+app.use('/terminal', terminalRoutes);
 
 app.use(
   '/',

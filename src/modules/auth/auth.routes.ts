@@ -23,7 +23,16 @@ import {
   verifyLoginCodeController,
 } from './auth.controller.js';
 
+import {
+  terminalAccessRoutes,
+} from './terminalAccess.routes.js';
+
 export const authRoutes = Router();
+
+authRoutes.use(
+  '/terminal-access',
+  terminalAccessRoutes
+);
 authRoutes.use(
   '/admin-access',
   adminAccessRoutes
