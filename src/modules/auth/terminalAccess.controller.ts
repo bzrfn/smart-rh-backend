@@ -216,3 +216,62 @@ export async function createTerminalSessionController(
     );
   }
 }
+
+
+export async function createAdminTerminalSessionController(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    if (
+      !getTerminalAccessAvailability()
+        .enabled
+    ) {
+      return terminalAccessUnavailable(
+        res
+      );
+    }
+
+    const terminalId =
+      String(
+        req.body?.terminalId ??
+        ''
+      ).trim();
+
+    if (
+      !/^[A-Za-z0-9._-]{3,64}$/.test(
+        terminalId
+      )
+    ) {
+      return res
+        .status(
+          400
+        )
+        .json({
+          message:
+            'Identificador de terminal inválido',
+        });
+    }
+
+    const token =
+      signTerminalAccessToken({
+        terminalId,
+      });
+
+    return res
+      .status(
+        200
+      )
+      .json({
+        token,
+        tokenType:
+          'Bearer',
+        terminalId,
+      });
+  } catch (error) {
+    return next(
+      error
+    );
+  }
+}

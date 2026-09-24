@@ -138,6 +138,24 @@ export async function sendTerminalAccessApprovalEmail(
       },
     });
 
+  const portalOrigin =
+    String(
+      process.env.CORS_ORIGIN ||
+      'https://portal.smart-rh.com.mx'
+    )
+      .split(',')[0]
+      .trim()
+      .replace(
+        /\/+$/,
+        ''
+      );
+
+  const approvalUrl =
+    escapeHtml(
+      `${portalOrigin}/portal/terminal-autorizacion?challengeId=${encodeURIComponent(
+        input.challengeId
+      )}`
+    );
   const html = `
     <div style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;">
       <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;background:#f8fafc;">
@@ -180,6 +198,14 @@ export async function sendTerminalAccessApprovalEmail(
                     </div>
                   </div>
 
+                  <div style="margin:24px 0 4px;text-align:center;">
+                    <a
+                      href="${approvalUrl}"
+                      style="display:inline-block;padding:14px 24px;background:#16a34a;color:#ffffff;text-decoration:none;border-radius:12px;font-size:14px;font-weight:700;"
+                    >
+                      Revisar y autorizar terminal
+                    </a>
+                  </div>
                   <p style="margin:22px 0 0;color:#64748b;font-size:14px;line-height:1.7;">
                     La solicitud vence en ${expiresInMinutes} minutos.
                     Revísala desde el portal administrativo autenticado de SMART RH.

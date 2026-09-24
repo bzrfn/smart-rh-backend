@@ -16,6 +16,7 @@ import {
 
 import {
   createTerminalSessionController,
+  createAdminTerminalSessionController,
   requestTerminalAccessController,
   terminalAccessDecisionController,
   terminalAccessStatusController,
@@ -45,4 +46,12 @@ terminalAccessRoutes.post(
 terminalAccessRoutes.post(
   '/session',
   createTerminalSessionController
+);
+
+
+terminalAccessRoutes.post(
+  '/admin-session',
+  authJwt,
+  requireTerminalApprover,
+  createAdminTerminalSessionController
 );
