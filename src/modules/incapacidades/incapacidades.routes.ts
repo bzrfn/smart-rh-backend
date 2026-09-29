@@ -20,6 +20,7 @@ import {
   detail,
   mine,
   review,
+  reviewHistory,
 } from './incapacidades.controller.js';
 
 
@@ -106,6 +107,14 @@ incapacidadesRoutes.get(
   requireAdmin,
   all
 );
+
+incapacidadesRoutes.get(
+  '/:id/revisiones',
+  authJwt,
+  requireAdmin,
+  reviewHistory
+);
+
 
 incapacidadesRoutes.patch(
   '/:id/revision',

@@ -186,8 +186,8 @@ export const MAX_INCAPACIDAD_PROOF_BYTES =
 export type IncapacidadProof = {
   buffer: Buffer;
   originalName: string;
-  mime: 'application/pdf' | 'image/jpeg' | 'image/png';
-  extension: 'pdf' | 'jpg' | 'png';
+  mime: 'application/pdf';
+  extension: 'pdf';
   size: number;
 };
 
@@ -273,6 +273,13 @@ function detectProofType(
   mime: IncapacidadProof['mime'];
   extension: IncapacidadProof['extension'];
 } {
+  /*
+   * No confiar en el nombre ni en el MIME enviado
+   * por el cliente.
+   *
+   * Incapacidades acepta exclusivamente PDF y el
+   * backend verifica la firma binaria real %PDF-.
+   */
   const isPdf =
     buffer.length >= 5 &&
     buffer
@@ -284,56 +291,21 @@ function detectProofType(
         'ascii'
       ) === '%PDF-';
 
-  if (isPdf) {
-    return {
-      mime:
-        'application/pdf',
-      extension:
-        'pdf',
-    };
+  if (!isPdf) {
+    throw new AppError(
+      'Formato de comprobante no permitido. Solo se aceptan archivos PDF',
+      400
+    );
   }
 
-  const isPng =
-    buffer.length >= 8 &&
-    buffer[0] === 0x89 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x4e &&
-    buffer[3] === 0x47 &&
-    buffer[4] === 0x0d &&
-    buffer[5] === 0x0a &&
-    buffer[6] === 0x1a &&
-    buffer[7] === 0x0a;
+  return {
+    mime:
+      'application/pdf',
 
-  if (isPng) {
-    return {
-      mime:
-        'image/png',
-      extension:
-        'png',
-    };
-  }
-
-  const isJpeg =
-    buffer.length >= 3 &&
-    buffer[0] === 0xff &&
-    buffer[1] === 0xd8 &&
-    buffer[2] === 0xff;
-
-  if (isJpeg) {
-    return {
-      mime:
-        'image/jpeg',
-      extension:
-        'jpg',
-    };
-  }
-
-  throw new AppError(
-    'Formato de comprobante no permitido. Usa PDF, JPG o PNG',
-    400
-  );
+    extension:
+      'pdf',
+  };
 }
-
 
 export function prepareIncapacidadProof(
   base64: unknown,

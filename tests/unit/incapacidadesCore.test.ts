@@ -154,70 +154,10 @@ describe(
     );
 
 
-    test(
-      'acepta PNG en Data URL',
-      () => {
-        const png =
-          Buffer.from([
-            0x89,
-            0x50,
-            0x4e,
-            0x47,
-            0x0d,
-            0x0a,
-            0x1a,
-            0x0a,
-            0x00,
-          ]);
-
-        const proof =
-          prepareIncapacidadProof(
-            `data:image/png;base64,${png.toString('base64')}`,
-            'evidencia.png'
-          );
-
-        expect(
-          proof.mime
-        ).toBe(
-          'image/png'
-        );
-
-        expect(
-          proof.extension
-        ).toBe(
-          'png'
-        );
-      }
-    );
 
 
-    test(
-      'acepta JPEG por firma real',
-      () => {
-        const jpeg =
-          Buffer.from([
-            0xff,
-            0xd8,
-            0xff,
-            0xe0,
-            0x00,
-          ]);
 
-        const proof =
-          prepareIncapacidadProof(
-            jpeg.toString(
-              'base64'
-            ),
-            'foto.jpg'
-          );
 
-        expect(
-          proof.mime
-        ).toBe(
-          'image/jpeg'
-        );
-      }
-    );
 
 
     test(
@@ -254,6 +194,64 @@ describe(
             )
         ).toThrow(
           /Base64 no es válido/
+        );
+      }
+    );
+
+
+    test(
+      'rechaza PNG aunque el archivo tenga firma real de imagen',
+      () => {
+        const png =
+          Buffer.from([
+            0x89,
+            0x50,
+            0x4e,
+            0x47,
+            0x0d,
+            0x0a,
+            0x1a,
+            0x0a,
+          ]).toString(
+            'base64'
+          );
+
+        expect(
+          () =>
+            prepareIncapacidadProof(
+              png,
+              'incapacidad.pdf'
+            )
+        ).toThrow(
+          /Solo se aceptan archivos PDF/
+        );
+      }
+    );
+
+
+    test(
+      'rechaza JPEG aunque se intente nombrar como PDF',
+      () => {
+        const jpeg =
+          Buffer.from([
+            0xff,
+            0xd8,
+            0xff,
+            0xe0,
+            0x00,
+            0x10,
+          ]).toString(
+            'base64'
+          );
+
+        expect(
+          () =>
+            prepareIncapacidadProof(
+              jpeg,
+              'incapacidad.pdf'
+            )
+        ).toThrow(
+          /Solo se aceptan archivos PDF/
         );
       }
     );

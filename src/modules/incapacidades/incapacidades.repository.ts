@@ -280,6 +280,121 @@ export async function listAllIncapacidades(
 }
 
 
+export type IncapacidadReviewHistoryRow =
+  RowDataPacket & {
+    id: number;
+
+    incapacidad_id: number;
+
+    admin_usuario_id: number;
+
+    accion:
+      | 'APROBAR'
+      | 'RECHAZAR';
+
+    estado_anterior:
+      IncapacidadEstado;
+
+    estado_nuevo:
+      | 'aprobada'
+      | 'rechazada';
+
+    observaciones_admin:
+      string | null;
+
+    analisis_disponible:
+      number;
+
+    estado_analisis_snapshot:
+      | 'pendiente'
+      | 'completado'
+      | 'requiere_revision'
+      | 'error'
+      | null;
+
+    estado_estructura_snapshot:
+      | 'valido'
+      | 'requiere_revision'
+      | 'invalido'
+      | null;
+
+    puntaje_estructura_snapshot:
+      number | string | null;
+
+    duplicado_detectado_snapshot:
+      number | null;
+
+    duplicado_de_incapacidad_id_snapshot:
+      number | null;
+
+    decidido_at:
+      Date | string;
+
+    admin_nombre:
+      string;
+
+    admin_apellido:
+      string;
+  };
+
+
+export async function listIncapacidadReviewHistory(
+  incapacidadId: number
+): Promise<IncapacidadReviewHistoryRow[]> {
+  const [
+    rows,
+  ] =
+    await pool.execute<
+      IncapacidadReviewHistoryRow[]
+    >(
+      `
+      SELECT
+        r.id,
+        r.incapacidad_id,
+        r.admin_usuario_id,
+        r.accion,
+        r.estado_anterior,
+        r.estado_nuevo,
+        r.observaciones_admin,
+
+        r.analisis_disponible,
+        r.estado_analisis_snapshot,
+        r.estado_estructura_snapshot,
+        r.puntaje_estructura_snapshot,
+        r.duplicado_detectado_snapshot,
+        r.duplicado_de_incapacidad_id_snapshot,
+
+        r.decidido_at,
+
+        admin.nombre
+          AS admin_nombre,
+
+        admin.apellido
+          AS admin_apellido
+
+      FROM incapacidad_revisiones r
+
+      INNER JOIN usuarios admin
+        ON admin.id =
+           r.admin_usuario_id
+
+      WHERE r.incapacidad_id = ?
+
+      ORDER BY
+        r.decidido_at DESC,
+        r.id DESC
+      `,
+      [
+        incapacidadId,
+      ]
+    );
+
+
+  return rows;
+}
+
+
+
 export async function reviewIncapacidad(
   id: number,
   adminUserId: number,
@@ -289,33 +404,247 @@ export async function reviewIncapacidad(
   observacionesAdmin:
     string | null
 ): Promise<boolean> {
-  const [result] =
-    await pool.execute<ResultSetHeader>(
-      `
-      UPDATE incapacidades
+  const connection =
+    await pool.getConnection();
 
-      SET
-        estado = ?,
-        observaciones_admin = ?,
-        revisado_por_admin_id = ?,
-        revisado_at = CURRENT_TIMESTAMP
 
-      WHERE id = ?
-        AND estado = 'pendiente'
-      `,
-      [
-        estado,
-        observacionesAdmin,
-        adminUserId,
-        id,
-      ]
-    );
+  try {
+    await connection
+      .beginTransaction();
 
-  return (
-    Number(
-      result.affectedRows
-    ) === 1
-  );
+
+    /*
+     * El guard de estado mantiene una única
+     * decisión final por incapacidad.
+     */
+    const [
+      result,
+    ] =
+      await connection
+        .execute<ResultSetHeader>(
+          `
+          UPDATE incapacidades
+
+          SET
+            estado = ?,
+            observaciones_admin = ?,
+            revisado_por_admin_id = ?,
+            revisado_at = CURRENT_TIMESTAMP
+
+          WHERE id = ?
+            AND estado = 'pendiente'
+          `,
+          [
+            estado,
+            observacionesAdmin,
+            adminUserId,
+            id,
+          ]
+        );
+
+
+    if (
+      Number(
+        result.affectedRows
+      ) !== 1
+    ) {
+      await connection
+        .rollback();
+
+      return false;
+    }
+
+
+    /*
+     * Snapshot mínimo del resultado automático
+     * disponible cuando RRHH tomó la decisión.
+     *
+     * Puede no existir análisis.
+     */
+    const [
+      analysisRows,
+    ] =
+      await connection
+        .execute<
+          (
+            RowDataPacket & {
+              id:
+                number;
+
+              estado_analisis:
+                | 'pendiente'
+                | 'completado'
+                | 'requiere_revision'
+                | 'error';
+
+              estado_estructura:
+                | 'valido'
+                | 'requiere_revision'
+                | 'invalido';
+
+              puntaje_estructura:
+                number | string;
+
+              duplicado_detectado:
+                number;
+
+              duplicado_de_incapacidad_id:
+                number | null;
+
+              proveedor_analisis:
+                string;
+
+              version_analisis:
+                string;
+            }
+          )[]
+        >(
+          `
+          SELECT
+            id,
+            estado_analisis,
+            estado_estructura,
+            puntaje_estructura,
+            duplicado_detectado,
+            duplicado_de_incapacidad_id,
+            proveedor_analisis,
+            version_analisis
+
+          FROM incapacidad_analisis
+
+          WHERE incapacidad_id = ?
+
+          LIMIT 1
+          `,
+          [
+            id,
+          ]
+        );
+
+
+    const analysis =
+      analysisRows[0] ||
+      null;
+
+
+    await connection
+      .execute<ResultSetHeader>(
+        `
+        INSERT INTO incapacidad_revisiones (
+          incapacidad_id,
+          admin_usuario_id,
+          accion,
+          estado_anterior,
+          estado_nuevo,
+          observaciones_admin,
+
+          analisis_disponible,
+          analisis_id,
+          estado_analisis_snapshot,
+          estado_estructura_snapshot,
+          puntaje_estructura_snapshot,
+          duplicado_detectado_snapshot,
+          duplicado_de_incapacidad_id_snapshot,
+          proveedor_analisis_snapshot,
+          version_analisis_snapshot,
+
+          decidido_at
+        )
+        VALUES (
+          ?,
+          ?,
+          ?,
+          'pendiente',
+          ?,
+          ?,
+
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+          ?,
+
+          CURRENT_TIMESTAMP
+        )
+        `,
+        [
+          id,
+          adminUserId,
+
+          estado === 'aprobada'
+            ? 'APROBAR'
+            : 'RECHAZAR',
+
+          estado,
+          observacionesAdmin,
+
+          analysis
+            ? 1
+            : 0,
+
+          analysis?.id ??
+            null,
+
+          analysis
+            ?.estado_analisis ??
+            null,
+
+          analysis
+            ?.estado_estructura ??
+            null,
+
+          analysis
+            ?.puntaje_estructura ??
+            null,
+
+          analysis
+            ? Number(
+                analysis
+                  .duplicado_detectado
+              )
+            : null,
+
+          analysis
+            ?.duplicado_de_incapacidad_id ??
+            null,
+
+          analysis
+            ?.proveedor_analisis ??
+            null,
+
+          analysis
+            ?.version_analisis ??
+            null,
+        ]
+      );
+
+
+    await connection
+      .commit();
+
+
+    return true;
+
+  } catch (error) {
+    try {
+      await connection
+        .rollback();
+
+    } catch {
+      /*
+       * Se conserva el error original.
+       */
+    }
+
+    throw error;
+
+  } finally {
+    connection.release();
+  }
 }
 
 

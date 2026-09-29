@@ -1,8 +1,13 @@
 import {
+  randomUUID,
+} from 'node:crypto';
+
+import {
   AppError,
 } from '../../utils/AppError.js';
 
 import {
+  deleteStorageObject,
   publicUploadPath,
   writeStorageObject,
 } from '../../config/storage.js';
@@ -21,10 +26,26 @@ import {
   hasActiveOverlap,
   IncapacidadEstado,
   listAllIncapacidades,
+  listIncapacidadReviewHistory,
   listOwnIncapacidades,
   reviewIncapacidad,
-  setIncapacidadComprobante,
 } from './incapacidades.repository.js';
+
+import {
+  analyzePdfStructure,
+  buildIncapacidadAutomaticValidation,
+} from './incapacidades.intelligence.js';
+
+import {
+  findIncapacidadAnalysisById,
+  listIncapacidadAnalysesByIds,
+  setIncapacidadComprobanteWithAnalysis,
+} from './incapacidades.intelligence.repository.js';
+
+import {
+  analyzeIncapacidadPdfFields,
+} from './incapacidades.intelligence.pipeline.js';
+
 
 
 type Actor = {
@@ -100,6 +121,31 @@ function normalizeListState(
   }
 
   return state;
+}
+
+
+async function decorateAdminIncapacidad<
+  T extends {
+    id: number;
+  }
+>(
+  item: T
+) {
+  const analysis =
+    await findIncapacidadAnalysisById(
+      Number(
+        item.id
+      )
+    );
+
+  return {
+    ...item,
+
+    validacion_automatica:
+      buildIncapacidadAutomaticValidation(
+        analysis
+      ),
+  };
 }
 
 
@@ -218,6 +264,14 @@ export async function getIncapacidadDetail(
     );
   }
 
+  if (
+    isAdmin(actor)
+  ) {
+    return decorateAdminIncapacidad(
+      item
+    );
+  }
+
   return item;
 }
 
@@ -238,10 +292,167 @@ export async function getAllIncapacidades(
       rawEstado
     );
 
-  return listAllIncapacidades(
-    estado
+    const items =
+    await listAllIncapacidades(
+      estado
+    );
+
+  const analyses =
+    await listIncapacidadAnalysesByIds(
+      items.map(
+        item =>
+          Number(
+            item.id
+          )
+      )
+    );
+
+  const analysisByIncapacidad =
+    new Map(
+      analyses.map(
+        analysis => [
+          Number(
+            analysis.incapacidad_id
+          ),
+          analysis,
+        ]
+      )
+    );
+
+  return items.map(
+    item => ({
+      ...item,
+
+      validacion_automatica:
+        buildIncapacidadAutomaticValidation(
+          analysisByIncapacidad.get(
+            Number(
+              item.id
+            )
+          ) ||
+          null
+        ),
+    })
   );
 }
+
+
+export async function getIncapacidadReviewHistoryAsAdmin(
+  actor: Actor,
+  rawId: unknown
+) {
+  if (!isAdmin(actor)) {
+    throw new AppError(
+      'Forbidden',
+      403
+    );
+  }
+
+
+  const id =
+    ensurePositiveInteger(
+      rawId,
+      'id'
+    );
+
+
+  const current =
+    await findIncapacidadById(
+      id
+    );
+
+
+  if (!current) {
+    throw new AppError(
+      'Incapacidad no encontrada',
+      404
+    );
+  }
+
+
+  const rows =
+    await listIncapacidadReviewHistory(
+      id
+    );
+
+
+  return rows.map(
+    row => ({
+      id:
+        Number(
+          row.id
+        ),
+
+      accion:
+        row.accion,
+
+      estado_anterior:
+        row.estado_anterior,
+
+      estado_nuevo:
+        row.estado_nuevo,
+
+      observaciones_admin:
+        row.observaciones_admin,
+
+      administrador: {
+        id:
+          Number(
+            row.admin_usuario_id
+          ),
+
+        nombre:
+          row.admin_nombre,
+
+        apellido:
+          row.admin_apellido,
+      },
+
+      decidido_at:
+        row.decidido_at,
+
+      validacion_automatica_snapshot: {
+        disponible:
+          Boolean(
+            Number(
+              row.analisis_disponible
+            )
+          ),
+
+        estado_analisis:
+          row.estado_analisis_snapshot,
+
+        estado_estructura:
+          row.estado_estructura_snapshot,
+
+        puntaje_estructura:
+          row.puntaje_estructura_snapshot ===
+            null
+            ? null
+            : Number(
+                row
+                  .puntaje_estructura_snapshot
+              ),
+
+        duplicado_detectado:
+          row.duplicado_detectado_snapshot ===
+            null
+            ? null
+            : Boolean(
+                Number(
+                  row
+                    .duplicado_detectado_snapshot
+                )
+              ),
+
+        duplicado_de_incapacidad_id:
+          row
+            .duplicado_de_incapacidad_id_snapshot,
+      },
+    })
+  );
+}
+
 
 
 export async function reviewIncapacidadAsAdmin(
@@ -325,7 +536,9 @@ export async function reviewIncapacidadAsAdmin(
     );
   }
 
-  return result;
+  return decorateAdminIncapacidad(
+    result
+  );
 }
 
 
@@ -333,6 +546,132 @@ export async function reviewIncapacidadAsAdmin(
 // ============================================================
 // GI-HU02 — ADJUNTAR COMPROBANTE MÉDICO
 // ============================================================
+
+async function compensateIncapacidadProofStorage(
+  key: string
+): Promise<void> {
+  /*
+   * Best effort:
+   * no exponemos contenido médico ni Base64.
+   *
+   * La key lleva UUID por intento para no
+   * borrar el objeto confirmado por otro
+   * request concurrente.
+   */
+  try {
+    await deleteStorageObject(
+      key
+    );
+  } catch {
+    /*
+     * Se conserva el error principal.
+     * Una reconciliación operativa podrá
+     * revisar un eventual objeto huérfano.
+     */
+  }
+}
+
+
+
+/*
+ * MySQL2 materializa columnas DATE como Date
+ * cuando dateStrings no está habilitado.
+ *
+ * Una fecha laboral no representa un instante:
+ * conservamos sus componentes calendario locales
+ * y nunca usamos toISOString() para evitar
+ * desplazamientos por zona horaria.
+ */
+export function normalizeIncapacidadDateForIntelligence(
+  value:
+    unknown
+): string {
+  if (
+    value instanceof
+      Date
+  ) {
+    if (
+      !Number.isFinite(
+        value.getTime()
+      )
+    ) {
+      throw new AppError(
+        'Fecha de incapacidad inválida',
+        500
+      );
+    }
+
+
+    const year =
+      String(
+        value.getFullYear()
+      ).padStart(
+        4,
+        '0'
+      );
+
+
+    const month =
+      String(
+        value.getMonth() +
+        1
+      ).padStart(
+        2,
+        '0'
+      );
+
+
+    const day =
+      String(
+        value.getDate()
+      ).padStart(
+        2,
+        '0'
+      );
+
+
+    return [
+      year,
+      month,
+      day,
+    ].join(
+      '-'
+    );
+  }
+
+
+  if (
+    typeof value ===
+      'string'
+  ) {
+    const normalized =
+      value.trim();
+
+
+    const match =
+      normalized.match(
+        /^(\d{4})-(\d{2})-(\d{2})/
+      );
+
+
+    if (match) {
+      return [
+        match[1],
+        match[2],
+        match[3],
+      ].join(
+        '-'
+      );
+    }
+  }
+
+
+  throw new AppError(
+    'Fecha de incapacidad inválida',
+    500
+  );
+}
+
 
 export async function attachIncapacidadComprobante(
   actor: Actor,
@@ -408,15 +747,47 @@ export async function attachIncapacidadComprobante(
       input.filename
     );
 
+  const analysis =
+    analyzePdfStructure(
+      proof.buffer
+    );
+
+
+
+  /*
+   * Analizamos el contenido antes de
+   * escribir el objeto en storage.
+   *
+   * Solo continúa el resultado estructurado.
+   */
+  const extractionPersistence =
+    await analyzeIncapacidadPdfFields(
+      proof.buffer,
+      {
+        fecha_inicio:
+          normalizeIncapacidadDateForIntelligence(
+            current.fecha_inicio
+          ),
+
+        fecha_fin:
+          normalizeIncapacidadDateForIntelligence(
+            current.fecha_fin
+          ),
+
+        dias_calculados:
+          current.dias_calculados,
+      }
+    );
+
   const key =
     [
       'incapacidades',
-      `comprobante_${userId}_${id}_${Date.now()}.${proof.extension}`,
+      `comprobante_${userId}_${id}_${analysis.sha256.slice(0, 16)}_${randomUUID()}.${proof.extension}`,
     ].join('/');
 
   /*
    * Primero almacenamos el objeto.
-   * Después persistimos su referencia.
+   * Después persistimos su referencia y análisis.
    *
    * El UPDATE contiene las mismas
    * condiciones de ownership/estado
@@ -428,17 +799,40 @@ export async function attachIncapacidadComprobante(
     proof.mime
   );
 
-  const updated =
-    await setIncapacidadComprobante(
+  let persistence:
+    Awaited<
+      ReturnType<
+        typeof setIncapacidadComprobanteWithAnalysis
+      >
+    >;
+
+  try {
+    persistence =
+    await setIncapacidadComprobanteWithAnalysis(
       id,
       userId,
       key,
       proof.originalName,
       proof.mime,
-      proof.size
+      proof.size,
+      analysis,
+      extractionPersistence
     );
 
-  if (!updated) {
+  } catch (error) {
+    await compensateIncapacidadProofStorage(
+      key
+    );
+
+    throw error;
+  }
+
+
+  if (!persistence.updated) {
+    await compensateIncapacidadProofStorage(
+      key
+    );
+
     throw new AppError(
       'No fue posible asociar el comprobante a la incapacidad',
       409

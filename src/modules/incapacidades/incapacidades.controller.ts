@@ -11,6 +11,7 @@ import {
   attachIncapacidadComprobante,
   getAllIncapacidades,
   getIncapacidadDetail,
+  getIncapacidadReviewHistoryAsAdmin,
   getOwnIncapacidades,
   registerIncapacidad,
   reviewIncapacidadAsAdmin,
@@ -122,6 +123,38 @@ export async function all(
     return next(error);
   }
 }
+
+
+export async function reviewHistory(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const result =
+      await getIncapacidadReviewHistoryAsAdmin(
+        actorFromRequest(req),
+        req.params.id
+      );
+
+
+    return res.json({
+      ok: true,
+
+      incapacidad_id:
+        Number(
+          req.params.id
+        ),
+
+      revisiones:
+        result,
+    });
+
+  } catch (error) {
+    return next(error);
+  }
+}
+
 
 
 export async function review(
