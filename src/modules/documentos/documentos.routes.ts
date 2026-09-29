@@ -9,8 +9,13 @@ import {
 } from '../../middlewares/requireSelfOrRole.js';
 
 import {
+  requireRole,
+} from '../../middlewares/requireRole.js';
+
+import {
   generarContratoPdfController,
   generarCredencialImagenController,
+  verificarCredencialAdminController,
   verificarCredencialController,
   uploadFotoPerfilController,
 } from './documentos.controller.js';
@@ -18,6 +23,20 @@ import {
 
 export const documentosRoutes =
   Router();
+
+
+/**
+ * VERIFICACION ADMINISTRATIVA DE CREDENCIAL
+ *
+ * Requiere JWT y rol administrador.
+ * Usada por la app móvil administrativa.
+ */
+documentosRoutes.get(
+  '/admin/credenciales/verificar/:token',
+  authJwt,
+  requireRole('admin'),
+  verificarCredencialAdminController
+);
 
 
 /**

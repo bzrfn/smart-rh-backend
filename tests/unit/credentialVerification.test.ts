@@ -61,6 +61,7 @@ import {
 } from '../../src/modules/documentos/credential.utils.js';
 
 import {
+  verificarCredencialAdminToken,
   verificarCredencialToken,
 } from '../../src/modules/documentos/documentos.service.js';
 
@@ -344,6 +345,61 @@ describe(
 
 
     test(
+      'verificacion administrativa distingue credencial vencida',
+      async () => {
+        const token =
+          '9'.repeat(64);
+
+        const vigencia =
+          new Date(
+            Date.now() -
+            60 * 1000
+          ).toISOString();
+
+        mockDocument({
+          usuario_id: 7,
+
+          archivo_url:
+            '/uploads/credenciales/vencida.png',
+
+          metadata: {
+            contrato_id: 42,
+
+            vigencia,
+          },
+        });
+
+
+        const result =
+          await verificarCredencialAdminToken(
+            token
+          );
+
+
+        expect(result)
+          .toEqual({
+            valida:
+              false,
+
+            estado:
+              'VENCIDA',
+
+            resultado:
+              'vencida',
+
+            credencial: {
+              vigencia,
+            },
+          });
+
+        expect(
+          findUserMock
+        ).not.toHaveBeenCalled();
+      }
+    );
+
+
+    test(
       'rechaza usuario inactivo',
       async () => {
         const token =
@@ -526,6 +582,27 @@ describe(
         expect(source)
           .toMatch(
             /documentosRoutes\.get\(\s*'\/credenciales\/verificar\/:token',\s*verificarCredencialController\s*\);/s
+          );
+      }
+    );
+
+
+    test(
+      'ruta administrativa de verificacion exige JWT y rol admin',
+      () => {
+        const source =
+          readFileSync(
+            resolve(
+              process.cwd(),
+              'src/modules/documentos/documentos.routes.ts'
+            ),
+            'utf8'
+          );
+
+
+        expect(source)
+          .toMatch(
+            /documentosRoutes\.get\(\s*'\/admin\/credenciales\/verificar\/:token',\s*authJwt,\s*requireRole\(\s*'admin'\s*\),\s*verificarCredencialAdminController\s*\);/s
           );
       }
     );
