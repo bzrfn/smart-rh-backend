@@ -32,6 +32,8 @@ function normalizeRole(
  * credenciales/credencial_<usuarioId>.pdf
  *
  * contratos/contrato_<usuarioId>_<contratoId>_...
+ *
+ * incapacidades/comprobante_<usuarioId>_<incapacidadId>_...
  */
 function extractOwnerId(
   key: string
@@ -42,6 +44,8 @@ function extractOwnerId(
     /^credenciales\/credencial_(\d+)(?:_|\.|$)/i,
 
     /^contratos\/contrato_(\d+)(?:_|\.|$)/i,
+
+    /^incapacidades\/comprobante_(\d+)(?:_|\.|$)/i,
   ];
 
   for (const pattern of patterns) {

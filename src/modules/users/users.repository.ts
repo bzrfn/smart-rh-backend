@@ -9,6 +9,7 @@ import type {
 export type UserAccessState = {
   id: number;
   activo: number;
+  session_version: number;
   role: string;
 };
 
@@ -66,6 +67,7 @@ export async function findUserAccessState(
       `SELECT
          u.id,
          u.activo,
+         u.session_version,
          r.nombre AS role
        FROM usuarios u
        JOIN roles r

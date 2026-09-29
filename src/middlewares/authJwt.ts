@@ -28,6 +28,7 @@ export type AuthRequest =
 type JwtClaims = {
   userId: number;
   role?: string;
+  sessionVersion?: number;
 };
 
 export function resolveAuthContext(
@@ -66,6 +67,38 @@ export function resolveAuthContext(
       403
     );
   }
+
+  const currentSessionVersion =
+    Number(
+      state.session_version
+    );
+
+  const tokenSessionVersion =
+    claims.sessionVersion ===
+      undefined
+      ? 1
+      : Number(
+          claims.sessionVersion
+        );
+
+  if (
+    !Number.isInteger(
+      currentSessionVersion
+    ) ||
+    currentSessionVersion < 1 ||
+    !Number.isInteger(
+      tokenSessionVersion
+    ) ||
+    tokenSessionVersion < 1 ||
+    tokenSessionVersion !==
+      currentSessionVersion
+  ) {
+    throw new AppError(
+      'Sesión expirada. Inicia sesión nuevamente',
+      401
+    );
+  }
+
 
   const role =
     String(

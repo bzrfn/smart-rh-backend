@@ -1,3 +1,11 @@
+import {
+  type AdminAccessRequest,
+} from '../../middlewares/requireAdminAccess.js';
+
+import {
+  AppError,
+} from '../../utils/AppError.js';
+
 import { Request, Response, NextFunction } from 'express';
 import {
   validateForgotPassword,
@@ -15,35 +23,121 @@ import {
 } from './auth.service.js';
 import { guardarFotoPerfil } from '../documentos/documentos.service.js';
 
-export async function loginController(req: Request, res: Response, next: NextFunction) {
+export async function loginController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const { correo, contrasena } = validateLogin(req.body);
-    const data = await login(correo, contrasena);
+    const {
+      correo,
+      contrasena,
+    } =
+      validateLogin(
+        req.body
+      );
+
+    const data =
+      await login(
+        correo,
+        contrasena,
+        req.ip
+      );
 
     res.json({
       ok: true,
       ...data,
     });
+
   } catch (e) {
     next(e);
   }
 }
 
-export async function verifyLoginCodeController(req: Request, res: Response, next: NextFunction) {
-  try {
-    const correo = String(req.body?.correo || '').trim().toLowerCase();
-    const codigo = String(req.body?.codigo || '').trim();
 
-    const data = await verifyLoginCode(correo, codigo);
+export async function adminLoginController(
+  req: AdminAccessRequest,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    if (!req.adminAccess) {
+      throw new AppError(
+        'Acceso administrativo requerido',
+        401
+      );
+    }
+
+    const {
+      correo,
+      contrasena,
+    } =
+      validateLogin(
+        req.body
+      );
+
+    const data =
+      await login(
+        correo,
+        contrasena,
+        req.ip,
+        {
+          sponsorAdminId:
+            req.adminAccess.sponsorAdminId,
+
+          sponsorEmail:
+            req.adminAccess.sponsorEmail,
+        }
+      );
 
     res.json({
       ok: true,
       ...data,
     });
+
   } catch (e) {
     next(e);
   }
 }
+
+
+export async function verifyLoginCodeController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const challengeId =
+      String(
+        req.body?.challengeId ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+    const codigo =
+      String(
+        req.body?.codigo ||
+        ''
+      )
+        .trim();
+
+    const data =
+      await verifyLoginCode(
+        challengeId,
+        codigo
+      );
+
+    res.json({
+      ok: true,
+      ...data,
+    });
+
+  } catch (e) {
+    next(e);
+  }
+}
+
 
 export async function registerController(req: Request, res: Response, next: NextFunction) {
   try {
@@ -106,7 +200,7 @@ export async function verifyAccountController(req: Request, res: Response, next:
 export async function forgotPasswordController(req: Request, res: Response, next: NextFunction) {
   try {
     const { correo } = validateForgotPassword(req.body);
-    const data = await forgotPassword(correo);
+    const data = await forgotPassword(correo, req.ip);
 
     res.json({
       ok: true,
@@ -119,8 +213,8 @@ export async function forgotPasswordController(req: Request, res: Response, next
 
 export async function resetPasswordController(req: Request, res: Response, next: NextFunction) {
   try {
-    const { token, nuevaContrasena } = validateResetPassword(req.body);
-    const data = await resetPassword(token, nuevaContrasena);
+    const { correo, codigo, nuevaContrasena } = validateResetPassword(req.body);
+    const data = await resetPassword(correo, codigo, nuevaContrasena);
 
     res.json({
       ok: true,

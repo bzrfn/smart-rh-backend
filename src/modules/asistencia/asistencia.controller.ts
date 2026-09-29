@@ -10,6 +10,8 @@ import {
 
 import {
   approveAsistencia,
+  correctAsistencia,
+  getAsistenciaRevisiones,
   cleanupExpiredQrs,
   generateDynamicQr,
   getAsistencias,
@@ -17,6 +19,7 @@ import {
   getMisAsistenciasWeekly,
   getMisAsistenciasWeeklyReport,
   getPendientes,
+  justifyAsistencia,
   rejectAsistencia,
   scanQr,
 } from './asistencia.service.js';
@@ -341,7 +344,7 @@ export async function listPendientesController(
 // ============================================================
 
 export async function approveController(
-  req: Request,
+  req: AuthRequest,
   res: Response,
   next: NextFunction
 ) {
@@ -350,7 +353,14 @@ export async function approveController(
     await approveAsistencia(
       Number(
         req.params.id
-      )
+      ),
+
+      req.auth!.userId,
+
+      String(
+        req.body?.motivo ??
+        ''
+      ).trim()
     );
 
 
@@ -373,7 +383,7 @@ export async function approveController(
 // ============================================================
 
 export async function rejectController(
-  req: Request,
+  req: AuthRequest,
   res: Response,
   next: NextFunction
 ) {
@@ -382,7 +392,14 @@ export async function rejectController(
     await rejectAsistencia(
       Number(
         req.params.id
-      )
+      ),
+
+      req.auth!.userId,
+
+      String(
+        req.body?.motivo ??
+        ''
+      ).trim()
     );
 
 
@@ -391,6 +408,128 @@ export async function rejectController(
 
       message:
         'Asistencia rechazada correctamente',
+    });
+
+  } catch (e) {
+
+    next(e);
+  }
+}
+
+
+// ============================================================
+// CAMBIO3_CONTROLLER_JUSTIFICAR_ASISTENCIA
+// JUSTIFICAR ASISTENCIA
+// ============================================================
+
+export async function justifyController(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+
+    await justifyAsistencia(
+      Number(
+        req.params.id
+      ),
+
+      req.auth!.userId,
+
+      String(
+        req.body?.motivo ??
+        ''
+      ).trim()
+    );
+
+
+    res.json({
+      ok: true,
+
+      message:
+        'Asistencia justificada correctamente',
+    });
+
+  } catch (e) {
+
+    next(e);
+  }
+}
+
+
+// ============================================================
+// CAMBIO3_CONTROLLER_CORREGIR_ASISTENCIA
+// CORREGIR ASISTENCIA
+// ============================================================
+
+export async function correctController(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+
+    await correctAsistencia(
+      Number(
+        req.params.id
+      ),
+
+      req.auth!.userId,
+
+      String(
+        req.body?.motivo ??
+        ''
+      ).trim(),
+
+      String(
+        req.body?.hora_entrada ??
+        ''
+      ).trim(),
+
+      String(
+        req.body?.hora_salida ??
+        ''
+      ).trim()
+    );
+
+
+    res.json({
+      ok: true,
+
+      message:
+        'Asistencia corregida correctamente',
+    });
+
+  } catch (e) {
+
+    next(e);
+  }
+}
+
+
+// ============================================================
+// CAMBIO3_CONTROLLER_HISTORIAL_REVISIONES
+// CONSULTAR HISTORIAL ADMINISTRATIVO DE UNA ASISTENCIA
+// ============================================================
+
+export async function listRevisionesController(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+
+    const historial =
+      await getAsistenciaRevisiones(
+        Number(
+          req.params.id
+        )
+      );
+
+
+    res.json({
+      ok: true,
+      data: historial,
     });
 
   } catch (e) {

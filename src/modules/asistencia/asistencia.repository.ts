@@ -1,14 +1,5 @@
 import { pool } from '../../config/db.js';
 
-type CreateAsistenciaInput = {
-  usuario_id: number;
-  fecha: string;
-  hora_entrada?: string | null;
-  hora_salida?: string | null;
-  estado?: 'pendiente' | 'aprobada' | 'rechazada';
-  qr_token?: string | null;
-};
-
 export async function insertQrLog(token: string, gen: Date, exp: Date) {
   await pool.query(
     `INSERT INTO qr_logs (token, fecha_generacion, fecha_expiracion, usado)
@@ -41,29 +32,6 @@ export async function deleteExpiredQrLogs() {
   );
 
   return Number((result as any).affectedRows || 0);
-}
-
-export async function createAsistencia(p: CreateAsistenciaInput) {
-  const [r] = await pool.query(
-    `INSERT INTO asistencias (
-      usuario_id,
-      fecha,
-      hora_entrada,
-      hora_salida,
-      estado,
-      qr_token
-    ) VALUES (?, ?, ?, ?, ?, ?)`,
-    [
-      p.usuario_id,
-      p.fecha,
-      p.hora_entrada ?? null,
-      p.hora_salida ?? null,
-      p.estado ?? 'pendiente',
-      p.qr_token ?? null,
-    ]
-  );
-
-  return (r as any).insertId as number;
 }
 
 export async function findAsistenciaById(id: number) {
@@ -109,22 +77,6 @@ export async function findAsistenciaAbiertaByUserAndFecha(usuario_id: number, fe
   return list[0] || null;
 }
 
-export async function setAsistenciaHoraSalida(
-  id: number,
-  hora_salida: string,
-  qr_token?: string | null
-) {
-  await pool.query(
-    `UPDATE asistencias
-     SET hora_salida = ?,
-         qr_token = ?,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?
-       AND hora_salida IS NULL`,
-    [hora_salida, qr_token ?? null, id]
-  );
-}
-
 export async function listPendientes() {
   const [rows] = await pool.query(
     `SELECT
@@ -137,10 +89,12 @@ export async function listPendientes() {
        a.hora_entrada,
        a.hora_salida,
        a.estado,
+       a.duracion_minima_aplicada_minutos,
+       a.duracion_registrada_segundos,
        a.qr_token
      FROM asistencias a
      JOIN usuarios u ON u.id = a.usuario_id
-     WHERE a.estado = 'pendiente'
+     WHERE a.estado IN ('pendiente', 'INVALIDA_PENDIENTE_REVISION')
      ORDER BY a.fecha DESC, a.id DESC`
   );
 
@@ -159,6 +113,8 @@ export async function listMisAsistencias(usuario_id: number) {
        a.hora_entrada,
        a.hora_salida,
        a.estado,
+       a.duracion_minima_aplicada_minutos,
+       a.duracion_registrada_segundos,
        a.qr_token
      FROM asistencias a
      JOIN usuarios u ON u.id = a.usuario_id
@@ -186,6 +142,8 @@ export async function listMisAsistenciasByDateRange(
        a.hora_entrada,
        a.hora_salida,
        a.estado,
+       a.duracion_minima_aplicada_minutos,
+       a.duracion_registrada_segundos,
        a.qr_token
      FROM asistencias a
      JOIN usuarios u ON u.id = a.usuario_id
@@ -210,6 +168,8 @@ export async function listAllAsistencias() {
        a.hora_entrada,
        a.hora_salida,
        a.estado,
+       a.duracion_minima_aplicada_minutos,
+       a.duracion_registrada_segundos,
        a.qr_token
      FROM asistencias a
      JOIN usuarios u ON u.id = a.usuario_id
@@ -219,12 +179,60 @@ export async function listAllAsistencias() {
   return rows as any[];
 }
 
-export async function setAsistenciaEstado(id: number, estado: 'aprobada' | 'rechazada') {
-  await pool.query(
-    `UPDATE asistencias
-     SET estado = ?,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`,
-    [estado, id]
-  );
+// ============================================================
+// CAMBIO3_REPOSITORY_HISTORIAL_REVISIONES
+// HISTORIAL DURABLE DE REVISION ADMINISTRATIVA
+// ============================================================
+
+export async function listAsistenciaRevisiones(
+  asistenciaId: number
+) {
+
+  const [
+    rows,
+  ] =
+    await pool.query(
+      `
+        SELECT
+          r.id,
+          r.asistencia_id,
+          r.admin_usuario_id,
+
+          u.nombre
+            AS admin_nombre,
+
+          u.apellido
+            AS admin_apellido,
+
+          u.correo
+            AS admin_correo,
+
+          r.accion,
+          r.motivo,
+          r.estado_anterior,
+          r.estado_nuevo,
+          r.hora_entrada_anterior,
+          r.hora_salida_anterior,
+          r.hora_entrada_nueva,
+          r.hora_salida_nueva,
+          r.created_at
+
+        FROM asistencia_revisiones r
+
+        JOIN usuarios u
+          ON u.id = r.admin_usuario_id
+
+        WHERE r.asistencia_id = ?
+
+        ORDER BY
+          r.created_at ASC,
+          r.id ASC
+      `,
+      [
+        asistenciaId,
+      ]
+    );
+
+
+  return rows as any[];
 }

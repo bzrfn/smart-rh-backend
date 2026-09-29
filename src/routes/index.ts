@@ -1,3 +1,4 @@
+import { incapacidadesRoutes } from '../modules/incapacidades/incapacidades.routes.js';
 import { Router } from 'express';
 
 import { authRoutes } from '../modules/auth/auth.routes.js';
@@ -42,3 +43,6 @@ router.use('/wearables', wearableRoutes);
 router.use('/kmeans', kmeansRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/integrations', awsSnsRoutes);
+
+// Gestión de Incapacidades
+router.use('/incapacidades', incapacidadesRoutes);

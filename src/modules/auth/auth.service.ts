@@ -1,14 +1,27 @@
 import {
+  resolvePublicRegistrationRoleId,
+} from './publicRegistration.policy.js';
+
+
+import {
   createUser,
   findUserByEmail,
   findUserById,
   marcarEmailVerificado,
-  updateUserPasswordById,
 } from './auth.repository.js';
 import { verifyPassword, hashPassword } from '../../utils/password.js';
 import { AppError } from '../../utils/AppError.js';
-import { signJwt } from '../../config/jwt.js';
-import { consumeResetToken, createResetToken } from './auth.reset.store.js';
+import { env } from '../../config/env.js';
+import {
+  completePasswordRecovery,
+  requestPasswordRecovery,
+} from './passwordRecovery.service.js';
+
+import {
+  issueLogin2fa,
+  verifyLogin2fa,
+  issueAdminLogin2fa,
+} from './login2fa.service.js';
 import { registrarEventoSistema } from '../eventosSistema/eventosSistema.service.js';
 import { registrarHistorialAcceso } from '../historialAccesos/historialAccesos.service.js';
 import { generarRecordatorioAsistenciaLogin } from '../notificaciones/notificaciones.service.js';
@@ -21,10 +34,7 @@ import {
 } from './auth.email-code.repository.js';
 import {
   enviarCodigoConfirmacionCuentaEmail,
-  enviarCodigoLoginEmail,
-  enviarCodigoResetPasswordEmail,
   enviarCuentaConfirmadaEmail,
-  enviarPasswordActualizadoEmail,
 } from './auth.email.service.js';
 
 function buildUserResponse(u: any) {
@@ -48,17 +58,23 @@ function getFullName(u: any) {
   return `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.correo;
 }
 
-async function registrarLoginExitoso(u: any) {
+async function registrarLoginExitoso(
+  u: any,
+  twoFactor: boolean
+) {
   await registrarEventoSistema({
     tipo: 'LOGIN_EXITOSO',
     usuario_id: u.id,
     correo: u.correo,
     modulo: 'auth',
-    descripcion: 'Inicio de sesión exitoso con verificación 2FA.',
+    descripcion:
+      twoFactor
+        ? 'Inicio de sesión exitoso con verificación 2FA.'
+        : 'Inicio de sesión exitoso.',
     resultado: 'exitoso',
     metadata: {
       role: u.rol_nombre,
-      twoFactor: true,
+      twoFactor,
     },
   });
 
@@ -70,28 +86,45 @@ async function registrarLoginExitoso(u: any) {
     origen: 'api',
     metadata: {
       role: u.rol_nombre,
-      twoFactor: true,
+      twoFactor,
     },
   });
 
-  await generarRecordatorioAsistenciaLogin(u.id);
+  await generarRecordatorioAsistenciaLogin(
+    u.id
+  );
 
   await registrarActividadEmpleado({
     usuario_id: u.id,
     tipo: 'LOGIN_EXITOSO',
     titulo: 'Inicio de sesión',
-    descripcion: 'El usuario inició sesión correctamente en SMART RH con verificación por correo.',
+    descripcion:
+      twoFactor
+        ? 'El usuario inició sesión correctamente en SMART RH con verificación 2FA.'
+        : 'El usuario inició sesión correctamente en SMART RH.',
     modulo: 'auth',
     origen: 'mobile',
     metadata: {
       role: u.rol_nombre,
       correo: u.correo,
-      twoFactor: true,
+      twoFactor,
     },
   });
 }
 
-export async function login(correo: string, contrasena: string) {
+
+export type AdminLoginAccessContext = {
+  sponsorAdminId: number;
+  sponsorEmail: string;
+};
+
+
+export async function login(
+  correo: string,
+  contrasena: string,
+  requestIp?: unknown,
+  adminAccess?: AdminLoginAccessContext
+) {
   const u = await findUserByEmail(correo);
 
   if (!u) {
@@ -135,6 +168,78 @@ export async function login(correo: string, contrasena: string) {
 
     throw new AppError('Usuario inactivo', 403);
   }
+
+  const isAdminAccount =
+    String(
+      u.rol_nombre ||
+      ''
+    )
+      .trim()
+      .toLowerCase() ===
+    'admin';
+
+
+  if (
+    adminAccess &&
+    !isAdminAccount
+  ) {
+    throw new AppError(
+      'Acceso administrativo invalido',
+      401
+    );
+  }
+
+
+  if (isAdminAccount) {
+    const sponsorId =
+      Number(
+        adminAccess?.sponsorAdminId
+      );
+
+    const sponsorEmail =
+      String(
+        adminAccess?.sponsorEmail ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+    const approverEmail =
+      String(
+        env.adminAccess.approverEmail ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+
+    /*
+     * sponsor = administrador general que AUTORIZÓ.
+     *
+     * u = administrador que realmente intenta iniciar sesión.
+     *
+     * Son identidades distintas por diseño.
+     */
+    if (
+      !adminAccess ||
+      !Number.isInteger(
+        sponsorId
+      ) ||
+      sponsorId <= 0 ||
+      !approverEmail ||
+      sponsorEmail !==
+        approverEmail
+    ) {
+      /*
+       * Respuesta genérica:
+       * no revelar que el correo pertenece a un admin.
+       */
+      throw new AppError(
+        'Credenciales incorrectas',
+        401
+      );
+    }
+  }
+
 
   const ok = await verifyPassword(contrasena, u.contrasena);
 
@@ -190,94 +295,203 @@ export async function login(correo: string, contrasena: string) {
     };
   }
 
-  await invalidarCodigosActivos({
-    correo: u.correo,
-    tipo: 'LOGIN_2FA',
-  });
+  const normalizedRole =
+    String(
+      u.rol_nombre ||
+      ''
+    )
+      .trim()
+      .toLowerCase();
 
-  const codigo = generarCodigoEmail();
+  if (
+    normalizedRole ===
+    'admin'
+  ) {
+    const challenge =
+      await issueAdminLogin2fa(
+        {
+          id:
+            u.id,
 
-  const registroCodigo = await crearCodigoEmail({
-    usuario_id: u.id,
-    correo: u.correo,
-    codigo,
-    tipo: 'LOGIN_2FA',
-    minutosExpiracion: 10,
-  });
+          correo:
+            u.correo,
 
-  await enviarCodigoLoginEmail({
-    correo: u.correo,
-    nombre: getFullName(u),
-    codigo,
-  });
+          nombre:
+            u.nombre,
+
+          apellido:
+            u.apellido,
+
+          role:
+            u.rol_nombre,
+
+          sessionVersion:
+            Number(
+              u.session_version
+            ),
+        },
+        requestIp
+      );
+
+    await registrarEventoSistema({
+      tipo:
+        'LOGIN_2FA_REQUERIDO',
+
+      usuario_id:
+        u.id,
+
+      correo:
+        u.correo,
+
+      modulo:
+        'auth',
+
+      descripcion:
+        challenge.reused
+          ? 'Inicio administrativo pendiente de un código 2FA previamente enviado.'
+          : 'Código 2FA administrativo enviado para completar el inicio de sesión.',
+
+      resultado:
+        'exitoso',
+
+      metadata: {
+        role:
+          u.rol_nombre,
+
+        expiresInMinutes:
+          challenge.expiresInMinutes,
+
+        reused:
+          challenge.reused,
+      },
+    });
+
+    return challenge;
+  }
+
+  const challenge =
+    await issueLogin2fa(
+      {
+        id:
+          u.id,
+
+        correo:
+          u.correo,
+
+        nombre:
+          u.nombre,
+
+        apellido:
+          u.apellido,
+
+        role:
+          u.rol_nombre,
+
+        sessionVersion:
+          Number(
+            u.session_version
+          ),
+      },
+      requestIp
+    );
 
   await registrarEventoSistema({
-    tipo: 'LOGIN_2FA_ENVIADO',
-    usuario_id: u.id,
-    correo: u.correo,
-    modulo: 'auth',
-    descripcion: 'Código 2FA enviado al correo del usuario.',
-    resultado: 'exitoso',
+    tipo:
+      'LOGIN_2FA_REQUERIDO',
+
+    usuario_id:
+      u.id,
+
+    correo:
+      u.correo,
+
+    modulo:
+      'auth',
+
+    descripcion:
+      challenge.reused
+        ? 'Inicio de sesión pendiente de un código 2FA previamente enviado.'
+        : 'Código 2FA enviado para completar el inicio de sesión.',
+
+    resultado:
+      'exitoso',
+
     metadata: {
-      expiresInMinutes: registroCodigo.expiresInMinutes,
+      role:
+        u.rol_nombre,
+
+      expiresInMinutes:
+        challenge.expiresInMinutes,
+
+      reused:
+        challenge.reused,
     },
   });
 
+  return challenge;
+}
+
+
+export async function verifyLoginCode(
+  challengeId: string,
+  codigo: string
+) {
+  const result =
+    await verifyLogin2fa(
+      challengeId,
+      codigo
+    );
+
+  const u =
+    await findUserById(
+      result.userId
+    );
+
+  if (
+    !u ||
+    !u.activo ||
+    !u.email_verificado ||
+    String(
+      u.rol_nombre ||
+      ''
+    )
+      .trim()
+      .toLowerCase() !==
+    String(
+      result.role ||
+      ''
+    )
+      .trim()
+      .toLowerCase() ||
+    Number(
+      u.session_version
+    ) !==
+      Number(
+        result.sessionVersion
+      )
+  ) {
+    throw new AppError(
+      'Sesión de inicio inválida',
+      401
+    );
+  }
+
+  await registrarLoginExitoso(
+    u,
+    true
+  );
+
   return {
-    requires2FA: true,
-    correo: u.correo,
-    expiresInMinutes: registroCodigo.expiresInMinutes,
-    message: 'Código de acceso enviado al correo.',
+    token:
+      result.token,
+
+    user:
+      buildUserResponse(
+        u
+      ),
   };
 }
 
-export async function verifyLoginCode(correo: string, codigo: string) {
-  if (!correo?.trim() || !codigo?.trim()) {
-    throw new AppError('Correo y código son obligatorios', 400);
-  }
-
-  const u = await findUserByEmail(correo);
-
-  if (!u) {
-    throw new AppError('No existe una cuenta con ese correo', 404);
-  }
-
-  if (!u.activo) {
-    throw new AppError('Usuario inactivo', 403);
-  }
-
-  if (!u.email_verificado) {
-    throw new AppError('La cuenta aún no está verificada', 403);
-  }
-
-  const entry = await consumirCodigoEmail({
-    correo: u.correo,
-    codigo: codigo.trim(),
-    tipo: 'LOGIN_2FA',
-  });
-
-  if (!entry) {
-    await registrarEventoSistema({
-      tipo: 'LOGIN_2FA_FALLIDO',
-      usuario_id: u.id,
-      correo: u.correo,
-      modulo: 'auth',
-      descripcion: 'Código 2FA inválido o expirado.',
-      resultado: 'fallido',
-    });
-
-    throw new AppError('Código inválido o expirado', 400);
-  }
-
-  const token = signJwt({ userId: u.id, role: u.rol_nombre });
-
-  await registrarLoginExitoso(u);
-
-  return {
-    token,
-    user: buildUserResponse(u),
-  };
-}
 
 export async function register(data: {
   nombre: string;
@@ -312,7 +526,10 @@ export async function register(data: {
     apellido: data.apellido,
     correo: data.correo,
     contrasena: hashed,
-    rol_id: data.rol_id,
+    rol_id:
+      resolvePublicRegistrationRoleId(
+        data.rol_id
+      ),
     telefono: data.telefono || null,
     direccion: data.direccion || null,
     fecha_ingreso: data.fecha_ingreso || null,
@@ -394,12 +611,10 @@ export async function verifyAccount(correo: string, codigo: string) {
   }
 
   if (u.email_verificado) {
-    const token = signJwt({ userId: u.id, role: u.rol_nombre });
-
     return {
-      token,
-      user: buildUserResponse(u),
-      message: 'La cuenta ya estaba verificada.',
+      requiresLogin: true,
+      correo: u.correo,
+      message: 'La cuenta ya estaba verificada. Inicia sesión para continuar.',
     };
   }
 
@@ -456,108 +671,32 @@ export async function verifyAccount(correo: string, codigo: string) {
     },
   });
 
-  const token = signJwt({ userId: updated.id, role: updated.rol_nombre });
-
   return {
-    token,
-    user: buildUserResponse(updated),
-    message: 'Cuenta confirmada correctamente.',
+    requiresLogin: true,
+    correo: updated.correo,
+    message: 'Cuenta confirmada correctamente. Inicia sesión para continuar.',
   };
 }
 
-export async function forgotPassword(correo: string) {
-  const user = await findUserByEmail(correo);
-
-  if (!user) {
-    await registrarEventoSistema({
-      tipo: 'RECUPERACION_PASSWORD',
-      correo,
-      modulo: 'auth',
-      descripcion: 'Solicitud de recuperación para correo no registrado.',
-      resultado: 'fallido',
-    });
-
-    throw new AppError('No existe una cuenta con ese correo', 404);
-  }
-
-  const reset = createResetToken({
-    userId: user.id,
-    correo: user.correo,
-  });
-
-  await enviarCodigoResetPasswordEmail({
-    correo: user.correo,
-    nombre: getFullName(user),
-    codigo: reset.token,
-  });
-
-  await registrarEventoSistema({
-    tipo: 'RECUPERACION_PASSWORD',
-    usuario_id: user.id,
-    correo: user.correo,
-    modulo: 'auth',
-    descripcion: 'Código de recuperación generado y enviado por correo.',
-    resultado: 'exitoso',
-    metadata: {
-      expiresInMinutes: reset.expiresInMinutes,
-    },
-  });
-
-  return {
-    message: 'Código de recuperación enviado al correo',
-    resetToken: reset.token,
-    expiresInMinutes: reset.expiresInMinutes,
-  };
+export async function forgotPassword(
+  correo: string,
+  ip?: unknown
+) {
+  return requestPasswordRecovery(
+    correo,
+    ip
+  );
 }
 
-export async function resetPassword(token: string, nuevaContrasena: string) {
-  const entry = consumeResetToken(token);
 
-  if (!entry) {
-    await registrarEventoSistema({
-      tipo: 'RESET_PASSWORD',
-      modulo: 'auth',
-      descripcion: 'Intento de restablecimiento con token inválido o expirado.',
-      resultado: 'fallido',
-    });
-
-    throw new AppError('Token de recuperación inválido o expirado', 400);
-  }
-
-  const hashed = await hashPassword(nuevaContrasena);
-  await updateUserPasswordById(entry.userId, hashed);
-
-  const user = await findUserById(entry.userId);
-
-  if (user) {
-    await enviarPasswordActualizadoEmail({
-      correo: user.correo,
-      nombre: getFullName(user),
-    });
-  }
-
-  await registrarEventoSistema({
-    tipo: 'RESET_PASSWORD',
-    usuario_id: entry.userId,
-    correo: entry.correo,
-    modulo: 'auth',
-    descripcion: 'Contraseña actualizada correctamente.',
-    resultado: 'exitoso',
-  });
-
-  await registrarActividadEmpleado({
-    usuario_id: entry.userId,
-    tipo: 'RESET_PASSWORD',
-    titulo: 'Contraseña actualizada',
-    descripcion: 'La contraseña del usuario fue actualizada correctamente.',
-    modulo: 'auth',
-    origen: 'api',
-    metadata: {
-      correo: entry.correo,
-    },
-  });
-
-  return {
-    message: 'Contraseña actualizada correctamente',
-  };
+export async function resetPassword(
+  correo: string,
+  codigo: string,
+  nuevaContrasena: string
+) {
+  return completePasswordRecovery(
+    correo,
+    codigo,
+    nuevaContrasena
+  );
 }

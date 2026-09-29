@@ -95,6 +95,22 @@ export async function addUser(
     data.rol_id
   );
 
+  const requestedRole =
+    await findRoleNameById(
+      data.rol_id
+    );
+
+  if (
+    isAdminRole(
+      requestedRole
+    )
+  ) {
+    throw new AppError(
+      'Las cuentas administrativas se crean únicamente mediante invitación',
+      409
+    );
+  }
+
   const hashed =
     await hashPassword(
       data.contrasena
@@ -145,6 +161,23 @@ export async function editUser(
     await findRoleNameById(
       data.rol_id
     );
+
+  if (
+    Number(
+      exists.rol_id
+    ) !==
+      Number(
+        data.rol_id
+      ) &&
+    isAdminRole(
+      nextRole
+    )
+  ) {
+    throw new AppError(
+      'La promoción a administrador requiere una invitación administrativa',
+      409
+    );
+  }
 
   const actorId =
     rawActorId === undefined

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import {
   generarContratoPdf,
   generarCredencialImagen,
+  verificarCredencialAdminToken,
   verificarCredencialToken,
   guardarFotoPerfil,
 } from './documentos.service.js';
@@ -26,6 +27,29 @@ export async function verificarCredencialController(
   try {
     const result =
       await verificarCredencialToken(
+        String(
+          req.params.token || ''
+        )
+      );
+
+    return res
+      .status(200)
+      .json(result);
+
+  } catch (e) {
+    next(e);
+  }
+}
+
+
+export async function verificarCredencialAdminController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const result =
+      await verificarCredencialAdminToken(
         String(
           req.params.token || ''
         )

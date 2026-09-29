@@ -29,6 +29,10 @@ export const env = {
       4000
     ),
 
+  trustProxy:
+    process.env.TRUST_PROXY ||
+    'loopback',
+
 
   // ==========================================================
   // ZONA HORARIA DE NEGOCIO
@@ -82,13 +86,99 @@ export const env = {
   jwt: {
     secret:
       process.env.JWT_SECRET ||
-      'CHANGE_ME',
+      '',
 
     expiresIn:
       process.env.JWT_EXPIRES_IN ||
       '8h',
   },
 
+
+  // ==========================================================
+  // PREAUTORIZACION ADMINISTRATIVA
+  // ==========================================================
+
+  adminAccess: {
+    jwtSecret:
+      process.env.ADMIN_ACCESS_JWT_SECRET ||
+      '',
+
+    hmacSecret:
+      process.env.ADMIN_ACCESS_HMAC_SECRET ||
+      '',
+
+    approverEmail:
+      process.env.ADMIN_ACCESS_APPROVER_EMAIL ||
+      '',
+  },
+
+
+  // ==========================================================
+  // SESION DE TERMINAL DE ASISTENCIA
+  // ==========================================================
+
+  terminalAccess: {
+    enabled:
+      String(
+        process.env.TERMINAL_ACCESS_ENABLED ||
+        'false'
+      ).toLowerCase() === 'true',
+
+    attendanceEnabled:
+      String(
+        process.env.TERMINAL_ATTENDANCE_ENABLED ||
+        'false'
+      ).toLowerCase() === 'true',
+
+    jwtSecret:
+      process.env.TERMINAL_ACCESS_JWT_SECRET ||
+      '',
+
+    hmacSecret:
+      process.env.TERMINAL_ACCESS_HMAC_SECRET ||
+      '',
+
+    approverEmail:
+      process.env.TERMINAL_ACCESS_APPROVER_EMAIL ||
+      '',
+
+    expiresIn:
+      process.env.TERMINAL_ACCESS_JWT_EXPIRES_IN ||
+      '8h',
+  },
+
+
+  // ==========================================================
+  // RECUPERACION DE CONTRASENA
+  // ==========================================================
+
+  passwordRecovery: {
+    hmacSecret:
+      process.env.PASSWORD_RECOVERY_HMAC_SECRET ||
+      '',
+  },
+
+
+  // ==========================================================
+  // LOGIN 2FA ADMINISTRATIVO
+  // ==========================================================
+
+  login2fa: {
+    hmacSecret:
+      process.env.LOGIN_2FA_HMAC_SECRET ||
+      '',
+  },
+
+
+  // ==========================================================
+  // INVITACIONES ADMINISTRATIVAS
+  // ==========================================================
+
+  adminInvite: {
+    hmacSecret:
+      process.env.ADMIN_INVITE_HMAC_SECRET ||
+      '',
+  },
 
   // ==========================================================
   // QR

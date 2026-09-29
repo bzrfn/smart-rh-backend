@@ -1250,6 +1250,262 @@ export async function verificarCredencialToken(
 }
 
 
+type AdminCredentialStatus =
+  | 'VIGENTE'
+  | 'VENCIDA'
+  | 'NO_VALIDA'
+  | 'USUARIO_INACTIVO'
+  | 'REEMPLAZADA'
+  | 'CONTRATO_NO_COINCIDE';
+
+
+function invalidAdminCredentialVerification(
+  estado: AdminCredentialStatus = 'NO_VALIDA',
+  extras: Record<string, unknown> = {}
+) {
+  return {
+    valida: false,
+
+    estado,
+
+    resultado:
+      estado === 'VENCIDA'
+        ? 'vencida'
+        : 'invalida',
+
+    ...extras,
+  };
+}
+
+
+export async function verificarCredencialAdminToken(
+  rawToken: string
+) {
+  const token =
+    String(
+      rawToken || ''
+    ).trim();
+
+
+  if (
+    !isCredentialVerificationToken(
+      token
+    )
+  ) {
+    return invalidAdminCredentialVerification();
+  }
+
+
+  const tokenHash =
+    hashCredentialVerificationToken(
+      token
+    );
+
+
+  const documento: any =
+    await DocumentoGeneradoModel
+      .findOne({
+        tipo:
+          'CREDENCIAL_IMAGEN',
+
+        estatus:
+          'GENERADO',
+
+        'metadata.verification_token_hash':
+          tokenHash,
+      })
+      .lean();
+
+
+  if (!documento) {
+    return invalidAdminCredentialVerification();
+  }
+
+
+  const metadata =
+    documento.metadata || {};
+
+
+  const vigencia =
+    new Date(
+      metadata.vigencia
+    );
+
+
+  if (
+    Number.isNaN(
+      vigencia.getTime()
+    )
+  ) {
+    return invalidAdminCredentialVerification();
+  }
+
+
+  if (
+    vigencia.getTime() <=
+    Date.now()
+  ) {
+    return invalidAdminCredentialVerification(
+      'VENCIDA',
+      {
+        credencial: {
+          vigencia:
+            vigencia.toISOString(),
+        },
+      }
+    );
+  }
+
+
+  const usuarioId =
+    Number(
+      documento.usuario_id
+    );
+
+
+  if (
+    !Number.isInteger(usuarioId) ||
+    usuarioId <= 0
+  ) {
+    return invalidAdminCredentialVerification();
+  }
+
+
+  const user =
+    await findUserDocumentData(
+      usuarioId
+    );
+
+
+  if (!user) {
+    return invalidAdminCredentialVerification();
+  }
+
+
+  if (
+    Number(
+      user.activo
+    ) !== 1
+  ) {
+    return invalidAdminCredentialVerification(
+      'USUARIO_INACTIVO',
+      {
+        usuario: {
+          id:
+            usuarioId,
+
+          activo:
+            false,
+        },
+      }
+    );
+  }
+
+
+  if (
+    String(
+      user.credencial_url || ''
+    ) !==
+    String(
+      documento.archivo_url || ''
+    )
+  ) {
+    return invalidAdminCredentialVerification(
+      'REEMPLAZADA',
+      {
+        usuario: {
+          id:
+            usuarioId,
+
+          activo:
+            true,
+        },
+      }
+    );
+  }
+
+
+  const contrato =
+    await findActiveContratoByUser(
+      usuarioId
+    );
+
+
+  if (
+    !contrato ||
+    Number(
+      contrato.id
+    ) !==
+    Number(
+      metadata.contrato_id
+    )
+  ) {
+    return invalidAdminCredentialVerification(
+      'CONTRATO_NO_COINCIDE',
+      {
+        usuario: {
+          id:
+            usuarioId,
+
+          activo:
+            true,
+        },
+      }
+    );
+  }
+
+
+  const nombreCompleto =
+    `${safeText(
+      user.nombre,
+      ''
+    )} ${safeText(
+      user.apellido,
+      ''
+    )}`.trim();
+
+
+  return {
+    valida: true,
+
+    estado:
+      'VIGENTE' as const,
+
+    resultado:
+      'valida' as const,
+
+    usuario: {
+      id:
+        usuarioId,
+
+      activo:
+        true,
+    },
+
+    empleado: {
+      codigo:
+        credentialEmployeeCode(
+          usuarioId
+        ),
+
+      nombre:
+        nombreCompleto,
+
+      rol:
+        safeText(
+          user.rol_nombre,
+          'Empleado'
+        ),
+    },
+
+    credencial: {
+      vigencia:
+        vigencia.toISOString(),
+    },
+  };
+}
+
+
 // ============================================================
 // COMPATIBILIDAD
 //

@@ -36,6 +36,10 @@ import {
 } from './middlewares/errorHandler.js';
 
 
+import {
+  terminalRoutes,
+} from './modules/terminal/terminal.routes.js';
+
 export const app = express();
 
 
@@ -45,6 +49,14 @@ export const app = express();
 
 // Evita exponer innecesariamente que el backend utiliza Express.
 app.disable('x-powered-by');
+
+
+// Nginx local -> Express.
+// Solo se confia por defecto en proxies de loopback.
+app.set(
+  'trust proxy',
+  env.trustProxy
+);
 
 
 // ============================================================
@@ -352,6 +364,8 @@ app.get(
 // ============================================================
 // RUTAS PRINCIPALES
 // ============================================================
+
+app.use('/terminal', terminalRoutes);
 
 app.use(
   '/',

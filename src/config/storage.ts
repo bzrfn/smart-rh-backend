@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -327,6 +328,58 @@ export async function writeStorageObject(
   );
 
   return publicUploadPath(key);
+}
+
+
+// ============================================================
+// ELIMINAR ARCHIVO
+//
+// Idempotente:
+// - local: ENOENT significa que ya no existe.
+// - S3: DeleteObject puede repetirse.
+// ============================================================
+
+export async function deleteStorageObject(
+  relativePath: string
+): Promise<void> {
+  const key =
+    normalizeStorageKey(
+      relativePath
+    );
+
+  if (!isS3Storage()) {
+    const filePath =
+      localStoragePath(
+        key
+      );
+
+    try {
+      await fs.promises.unlink(
+        filePath
+      );
+    } catch (error: any) {
+      if (
+        error?.code ===
+        'ENOENT'
+      ) {
+        return;
+      }
+
+      throw error;
+    }
+
+    return;
+  }
+
+  await getS3Client().send(
+    new DeleteObjectCommand({
+      Bucket:
+        env.storage.bucket,
+
+      Key:
+        key,
+    })
+  );
 }
 
 

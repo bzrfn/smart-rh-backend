@@ -1,5 +1,17 @@
 import { pool } from '../../config/db.js';
 
+import {
+  obtenerPoliticaAsistencia,
+} from '../asistencia/asistencia.policy.js';
+
+import {
+  evaluarDuracionAsistencia,
+} from '../asistencia/asistencia.validation.js';
+
+import {
+  getBusinessDateTime,
+} from '../../utils/businessTime.js';
+
 export type WearablePairingCode = {
   id: number;
   usuario_id: number;
@@ -320,6 +332,10 @@ export async function sincronizarEventoConAsistencia(data: {
 
   const qrToken = `WEAR-${data.device_id}-${Date.now()}`;
 
+  const businessNow =
+    getBusinessDateTime();
+
+
   const [rows] = await pool.query(
     `
     SELECT
@@ -332,68 +348,111 @@ export async function sincronizarEventoConAsistencia(data: {
       qr_token
     FROM asistencias
     WHERE usuario_id = ?
-      AND fecha = CURDATE()
+      AND fecha = ?
     ORDER BY id DESC
     LIMIT 1
     `,
-    [data.usuario_id]
+    [
+      data.usuario_id,
+      businessNow.date,
+    ]
   );
 
   const asistenciaActual = (rows as any[])[0];
 
   if (!asistenciaActual) {
     if (data.tipo_evento === 'ENTRADA') {
-      const [result]: any = await pool.query(
-        `
-        INSERT INTO asistencias (
-          usuario_id,
-          fecha,
-          hora_entrada,
-          estado,
-          qr_token
-        ) VALUES (?, CURDATE(), CURTIME(), 'aprobada', ?)
-        `,
-        [data.usuario_id, qrToken]
-      );
+      try {
+        const [result]: any = await pool.query(
+          `
+          INSERT INTO asistencias (
+            usuario_id,
+            fecha,
+            hora_entrada,
+            estado,
+            qr_token
+          ) VALUES (?, ?, ?, ?, ?)
+          `,
+          [
+            data.usuario_id,
+            businessNow.date,
+            businessNow.time,
+            'pendiente',
+            qrToken,
+          ]
+        );
 
-      return {
-        sincronizado: true,
-        asistencia_id: result.insertId,
-        message: 'Entrada registrada también en asistencias.',
-      };
+        return {
+          sincronizado: true,
+          asistencia_id: result.insertId,
+          message: 'Entrada registrada también en asistencias.',
+        };
+      } catch (error: any) {
+        const esEntradaDuplicada =
+          error?.code === 'ER_DUP_ENTRY' ||
+          Number(error?.errno) === 1062;
+
+        if (esEntradaDuplicada) {
+          return {
+            sincronizado: false,
+            asistencia_id: null,
+            message:
+              'La entrada ya está registrada para hoy.',
+          };
+        }
+
+        throw error;
+      }
     }
 
-    const [result]: any = await pool.query(
-      `
-      INSERT INTO asistencias (
-        usuario_id,
-        fecha,
-        hora_salida,
-        estado,
-        qr_token
-      ) VALUES (?, CURDATE(), CURTIME(), 'aprobada', ?)
-      `,
-      [data.usuario_id, qrToken]
-    );
-
     return {
-      sincronizado: true,
-      asistencia_id: result.insertId,
-      message: 'Salida registrada también en asistencias.',
+      sincronizado: false,
+      asistencia_id: null,
+      message:
+        'No existe una entrada previa para registrar la salida.',
     };
   }
 
   if (data.tipo_evento === 'ENTRADA') {
-    await pool.query(
-      `
-      UPDATE asistencias
-      SET hora_entrada = COALESCE(hora_entrada, CURTIME()),
-          estado = 'aprobada',
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-      `,
-      [asistenciaActual.id]
-    );
+    if (asistenciaActual.hora_entrada) {
+      return {
+        sincronizado: false,
+        asistencia_id: asistenciaActual.id,
+        message:
+          'La entrada ya está registrada para hoy.',
+      };
+    }
+
+    const [updateEntradaResult]: any =
+      await pool.query(
+        `
+        UPDATE asistencias
+        SET hora_entrada = ?,
+            estado = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+          AND hora_entrada IS NULL
+        `,
+        [
+          businessNow.time,
+          'pendiente',
+          asistenciaActual.id,
+        ]
+      );
+
+    if (
+      Number(
+        updateEntradaResult?.affectedRows ??
+        0
+      ) === 0
+    ) {
+      return {
+        sincronizado: false,
+        asistencia_id: asistenciaActual.id,
+        message:
+          'La entrada ya está registrada para hoy.',
+      };
+    }
 
     return {
       sincronizado: true,
@@ -402,16 +461,62 @@ export async function sincronizarEventoConAsistencia(data: {
     };
   }
 
-  await pool.query(
-    `
-    UPDATE asistencias
-    SET hora_salida = CURTIME(),
-        estado = 'aprobada',
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-    `,
-    [asistenciaActual.id]
-  );
+  const {
+    duracionMinimaMinutos,
+  } =
+    await obtenerPoliticaAsistencia();
+
+
+  const evaluacionDuracion =
+    evaluarDuracionAsistencia({
+      horaEntrada:
+        String(
+          asistenciaActual
+            .hora_entrada ??
+          ''
+        ),
+
+      horaSalida:
+        businessNow.time,
+
+      duracionMinimaMinutos,
+    });
+
+
+  const [updateSalidaResult]: any =
+    await pool.query(
+      `
+      UPDATE asistencias
+      SET hora_salida = ?,
+          estado = ?,
+          duracion_minima_aplicada_minutos = ?,
+          duracion_registrada_segundos = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+        AND hora_salida IS NULL
+      `,
+      [
+        businessNow.time,
+        evaluacionDuracion.estadoSalida,
+        duracionMinimaMinutos,
+        evaluacionDuracion.duracionSegundos,
+        asistenciaActual.id,
+      ]
+    );
+
+  if (
+    Number(
+      updateSalidaResult?.affectedRows ??
+      0
+    ) === 0
+  ) {
+    return {
+      sincronizado: false,
+      asistencia_id: asistenciaActual.id,
+      message:
+        'La salida ya está registrada para hoy.',
+    };
+  }
 
   return {
     sincronizado: true,
