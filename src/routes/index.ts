@@ -23,6 +23,7 @@ import wearableRoutes from '../modules/wearables/wearables.routes.js';
 import { kmeansRoutes } from '../modules/kmeans/kmeans.routes.js';
 import analyticsRoutes from '../modules/analytics/analytics.routes.js';
 import { calendarioRoutes } from '../modules/calendario/calendario.routes.js';
+import { chatbotRoutes } from '../modules/chatbot/chatbot.routes.js';
 
 
 router.use('/auth', authRoutes);
@@ -45,6 +46,7 @@ router.use('/kmeans', kmeansRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/integrations', awsSnsRoutes);
 router.use('/calendario', calendarioRoutes);
+router.use('/chatbot', chatbotRoutes);
 
 // Gestión de Incapacidades
 router.use('/incapacidades', incapacidadesRoutes);
