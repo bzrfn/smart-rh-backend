@@ -75,6 +75,7 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(response.asistente).toBe('Max');
     expect(response.intent).toBe('saludo');
     expect(response.respuesta).toMatch(/soy Max/i);
+    expect(response.respuesta).not.toMatch(/^Claro/i);
     expect(response.pasos).toHaveLength(0);
     expect(response.preguntas_seguimiento.length).toBeGreaterThan(0);
   });

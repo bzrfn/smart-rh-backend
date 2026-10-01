@@ -628,7 +628,7 @@ function buildConversationResponse(
       intent: 'saludo',
       confianza: 'alta',
       respuesta:
-        'Claro. Soy Max y puedo ayudarte con SMART RH. Cuentalo como lo dirias normalmente: que intentabas hacer, en que pantalla estabas o que mensaje viste. Con eso te respondo paso a paso sin mandarte directo a un modulo.',
+        'Hola, soy Max. Estoy aqui para ayudarte con SMART RH de forma sencilla: puedes contarme que paso, que intentabas hacer o que viste en pantalla, y lo revisamos juntos paso a paso.',
       pasos: [],
       preguntas_seguimiento: [
         'Que quieres resolver ahora?',
