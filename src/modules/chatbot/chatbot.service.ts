@@ -1,55 +1,45 @@
-import { crearTicketSoporte } from '../soporte/soporte.service.js';
-import { AppError } from '../../utils/AppError.js';
 import {
+  ChatbotAction,
+  ChatbotChannel,
   ChatbotKnowledgeEntry,
   ChatbotMessageContext,
   ChatbotResponse,
   ChatbotRole,
 } from './chatbot.types.js';
+import { crearTicketSoporte } from '../soporte/soporte.service.js';
+import { AppError } from '../../utils/AppError.js';
 
-const ASSISTANT_NAME = 'Max' as const;
+const ASSISTANT_NAME = 'Max';
 
 const DEFAULT_SUGGESTIONS = [
   'Tengo un problema',
-  'Revisar mi calendario',
-  'Ayuda con asistencia',
-  'Crear un ticket',
+  'Vacaciones',
+  'Asistencia',
+  'Documentos',
 ];
 
 const ADMIN_SUGGESTIONS = [
-  'Revisar pendientes',
-  'Validar una credencial',
-  'Ver incapacidades',
-  'Usuarios y permisos',
+  'Tengo un problema',
+  'Pendientes',
+  'Incapacidades',
+  'Asistencia',
 ];
 
 const GREETING_WORDS = [
   'hola',
   'buen dia',
   'buenas',
+  'que tal',
   'hey',
-  'max',
-  'que puedes hacer',
-  'quien eres',
-  'ayudame',
+  'saludos',
 ];
 
 const THANKS_WORDS = [
   'gracias',
+  'muchas gracias',
+  'te agradezco',
   'perfecto',
   'listo',
-  'ok gracias',
-  'muy bien',
-];
-
-const LEARNING_WORDS = [
-  'aprende',
-  'aprendizaje',
-  'aprendas',
-  'recuerda',
-  'contexto',
-  'mas inteligente',
-  'mejor respuesta',
 ];
 
 const PROBLEM_WORDS = [
@@ -59,33 +49,44 @@ const PROBLEM_WORDS = [
   'fallo',
   'no puedo',
   'no me deja',
-  'no carga',
-  'no aparece',
-  'se queda',
-  'pantalla blanca',
-  'credenciales incorrectas',
-  'incorrectas',
-  'bloqueado',
-  'urgente',
+  'no funciona',
+  'no entiendo',
+  'ayuda',
+  'atorado',
+  'atorada',
+  'duda',
+  'confundido',
+  'confundida',
+  'crear',
+  'solicitar',
 ];
 
 const DOMAIN_WORDS = [
+  'smart rh',
+  'portal',
+  'app',
+  'movil',
   'asistencia',
-  'entrada',
-  'salida',
-  'calendario',
   'vacaciones',
   'incapacidad',
   'incapacidades',
   'credencial',
   'documentos',
   'nomina',
-  'soporte',
-  'ticket',
+  'perfil',
   'usuarios',
   'permisos',
-  'terminal',
-  'qr',
+];
+
+const LEARNING_WORDS = [
+  'aprende',
+  'aprendizaje',
+  'inteligencia',
+  'inteligente',
+  'conversacional',
+  'contexto',
+  'mejorar',
+  'mejora',
 ];
 
 const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
@@ -252,6 +253,10 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'descanso',
       'dias disponibles',
       'solicitud vacaciones',
+      'crear vacaciones',
+      'periodo de vacaciones',
+      'apartado vacaciones',
+      'no entiendo vacaciones',
       'saldo',
       'periodo vacacional',
     ],
@@ -511,6 +516,16 @@ function compactText(value?: string | null) {
   return normalizeText(value).replace(/\s+/g, ' ');
 }
 
+function normalizeChannel(value?: string | null): ChatbotChannel {
+  const channel = normalizeText(value);
+
+  if (['mobile', 'movil', 'app', 'ios', 'android'].includes(channel)) {
+    return 'mobile';
+  }
+
+  return 'web';
+}
+
 function normalizeRole(role?: string | null): ChatbotRole {
   const value = normalizeText(role);
 
@@ -589,8 +604,8 @@ function buildContextMessage(
 }
 
 function confidenceFromScore(score: number): ChatbotResponse['confianza'] {
-  if (score >= 9) return 'alta';
-  if (score >= 4) return 'media';
+  if (score >= 18) return 'alta';
+  if (score >= 9) return 'media';
   return 'baja';
 }
 
@@ -680,7 +695,8 @@ function buildConversationResponse(
 function buildNaturalAnswer(
   entry: ChatbotKnowledgeEntry,
   isProblem: boolean,
-  confidence: ChatbotResponse['confianza']
+  confidence: ChatbotResponse['confianza'],
+  channel: ChatbotChannel
 ) {
   const intro = isProblem
     ? 'Te entiendo. Vamos a revisarlo por partes.'
@@ -691,7 +707,33 @@ function buildNaturalAnswer(
       ? ' Si me das la pantalla exacta y el mensaje que viste, puedo afinar el diagnostico.'
       : ' Si quieres, dime que viste en pantalla y lo aterrizamos al caso exacto.';
 
-  return `${intro} ${entry.respuesta}${closing}`;
+  const channelContext =
+    channel === 'mobile'
+      ? ' Estoy tomando en cuenta que estas escribiendo desde la app movil.'
+      : ' Estoy tomando en cuenta que estas en el portal web.';
+
+  return `${intro} ${entry.respuesta}${channelContext}${closing}`;
+}
+
+function adaptFollowUpQuestions(
+  questions: string[],
+  channel: ChatbotChannel
+) {
+  if (channel !== 'mobile') return questions;
+
+  return questions
+    .filter((item) => !/portal o app movil/i.test(item))
+    .map((item) =>
+      /pantalla/i.test(item)
+        ? item
+        : item.replace(/portal|app movil/gi, 'app movil')
+    );
+}
+
+function adaptSteps(steps: string[], channel: ChatbotChannel) {
+  if (channel !== 'mobile') return steps;
+
+  return steps.filter((item) => !/portal o app movil/i.test(item));
 }
 
 function buildUnauthorizedAdminResponse(role: ChatbotRole): ChatbotResponse {
@@ -725,7 +767,10 @@ function buildUnauthorizedAdminResponse(role: ChatbotRole): ChatbotResponse {
   };
 }
 
-function buildFallbackResponse(role: ChatbotRole): ChatbotResponse {
+function buildFallbackResponse(
+  role: ChatbotRole,
+  channel: ChatbotChannel
+): ChatbotResponse {
   return {
     asistente: ASSISTANT_NAME,
     categoria: 'Soporte',
@@ -733,23 +778,30 @@ function buildFallbackResponse(role: ChatbotRole): ChatbotResponse {
     intent: 'aclaracion',
     confianza: 'baja',
     respuesta:
-      'No quiero inventar una respuesta. Si me das un poco mas de contexto, puedo revisar contigo lo que paso y convertirlo en pasos claros: que intentabas hacer, en que pantalla estabas y que mensaje viste.',
-    pasos: [
-      'Indica si fue en portal o app movil.',
-      'Escribe el modulo relacionado: asistencia, calendario, incapacidades, documentos, nomina o soporte.',
-      'Agrega el error exacto si aparece.',
-    ],
+      channel === 'mobile'
+        ? 'Te leo desde la app movil. Para ayudarte bien, dime que intentabas hacer dentro de la pantalla actual y que parte no quedo clara. Primero lo resolvemos con pasos; si despues no queda solucionado, entonces puedo ayudarte a dejar un ticket con contexto.'
+        : 'Te leo desde el portal web. Para ayudarte bien, dime que intentabas hacer dentro de la pantalla actual y que parte no quedo clara. Primero lo resolvemos con pasos; si despues no queda solucionado, entonces puedo ayudarte a dejar un ticket con contexto.',
+    pasos:
+      channel === 'mobile'
+        ? [
+            'Dime el nombre de la pantalla o apartado donde estas.',
+            'Describe que intentabas hacer y en que paso te atoraste.',
+            'Si aparece un mensaje de error, escribelo tal cual.',
+            'Si con esos pasos no se resuelve, cerramos el caso creando un ticket con contexto.',
+          ]
+        : [
+            'Dime el nombre de la pantalla o apartado donde estas.',
+            'Describe que intentabas hacer y en que paso te atoraste.',
+            'Si aparece un mensaje de error, escribelo tal cual.',
+            'Si con esos pasos no se resuelve, cerramos el caso creando un ticket con contexto.',
+          ],
     preguntas_seguimiento: [
       'En que pantalla ocurrio?',
       'Que esperabas que pasara y que paso realmente?',
       'Quieres crear un ticket con esta informacion?',
     ],
     acciones: [
-      {
-        label: 'Crear ticket de soporte',
-        target: 'Soporte',
-        scope: 'both',
-      },
+
     ],
     sugerencias: getSuggestions(role),
     requiere_escalamiento: true,
@@ -766,8 +818,10 @@ export function responderChatbot(data: {
   role?: string | null;
   mensaje?: string | null;
   historial?: ChatbotMessageContext[];
+  canal?: string | null;
 }): ChatbotResponse {
   const role = normalizeRole(data.role);
+  const channel = normalizeChannel(data.canal);
   const rawMessage = String(data.mensaje || '').trim();
   const mensaje = compactText(rawMessage);
   const messageWithContext = buildContextMessage(
@@ -806,14 +860,14 @@ export function responderChatbot(data: {
   const ranked = entries
     .map((entry) => ({
       entry,
-      score: scoreEntry(entry, messageWithContext),
+      score: scoreEntry(entry, mensaje) * 2 + scoreEntry(entry, messageWithContext),
     }))
     .sort((a, b) => b.score - a.score);
 
   const best = ranked[0];
 
-  if (!best || best.score <= 1) {
-    return buildFallbackResponse(role);
+  if (!best || best.score <= 8) {
+    return buildFallbackResponse(role, channel);
   }
 
   const isProblem = hasAny(messageWithContext, PROBLEM_WORDS);
@@ -823,11 +877,14 @@ export function responderChatbot(data: {
     asistente: ASSISTANT_NAME,
     categoria: best.entry.categoria,
     titulo: best.entry.titulo,
-    intent: isProblem ? 'diagnostico' : 'orientacion',
+    intent: best.entry.categoria === 'Acceso' || isProblem ? 'diagnostico' : confidence === 'baja' ? 'escalamiento' : 'orientacion',
     confianza: confidence,
-    respuesta: buildNaturalAnswer(best.entry, isProblem, confidence),
-    pasos: best.entry.pasos,
-    preguntas_seguimiento: best.entry.preguntas_seguimiento,
+    respuesta: buildNaturalAnswer(best.entry, isProblem, confidence, channel),
+    pasos: adaptSteps(best.entry.pasos, channel),
+    preguntas_seguimiento: adaptFollowUpQuestions(
+      best.entry.preguntas_seguimiento,
+      channel
+    ),
     acciones: best.entry.acciones,
     sugerencias: best.entry.preguntas_seguimiento.length
       ? best.entry.preguntas_seguimiento

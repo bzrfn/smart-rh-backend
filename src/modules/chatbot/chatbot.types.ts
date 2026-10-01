@@ -1,4 +1,5 @@
 export type ChatbotRole = 'admin' | 'empleado' | 'usuario' | 'tecnico';
+export type ChatbotChannel = 'web' | 'mobile';
 
 export type ChatbotAction = {
   label: string;

@@ -110,4 +110,16 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(response.respuesta).toMatch(/contexto reciente/i);
     expect(response.acciones).toHaveLength(0);
   });
+
+  it('prioriza el contexto movil sin preguntar si fue portal o app', () => {
+    const response = responderChatbot({
+      role: 'empleado',
+      canal: 'mobile',
+      mensaje: 'estoy tratando de crear mi periodo de vacaciones pero no le entiendo al apartado',
+    });
+
+    expect(response.categoria).toBe('Vacaciones');
+    expect(response.respuesta).toMatch(/app movil/i);
+    expect(response.pasos.join(' ')).not.toMatch(/portal o app movil/i);
+  });
 });

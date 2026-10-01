@@ -32,6 +32,22 @@ function shouldCreateTicket(body: any) {
   );
 }
 
+function normalizeChannel(body: any) {
+  const value = String(
+    body?.canal ||
+      body?.channel ||
+      body?.origen ||
+      body?.source ||
+      ''
+  ).toLowerCase();
+
+  if (['mobile', 'movil', 'app', 'ios', 'android'].includes(value)) {
+    return 'mobile';
+  }
+
+  return 'web';
+}
+
 function normalizeHistory(body: any) {
   const source = Array.isArray(body?.historial)
     ? body.historial
@@ -64,6 +80,7 @@ export async function responderChatbotController(
       role: auth.role,
       mensaje,
       historial: normalizeHistory(req.body),
+      canal: normalizeChannel(req.body),
     });
 
     let ticket = null;
