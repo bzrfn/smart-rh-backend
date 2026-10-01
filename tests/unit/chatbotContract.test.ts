@@ -40,8 +40,10 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
       mensaje: 'donde administro usuarios y permisos',
     });
 
+    expect(adminResponse.asistente).toBe('Max');
     expect(adminResponse.categoria).toBe('Usuarios y permisos');
     expect(adminResponse.requiere_escalamiento).toBe(false);
+    expect(adminResponse.pasos.length).toBeGreaterThan(0);
 
     const employeeResponse = responderChatbot({
       role: 'empleado',
@@ -49,6 +51,7 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     });
 
     expect(employeeResponse.categoria).not.toBe('Usuarios y permisos');
+    expect(employeeResponse.requiere_escalamiento).toBe(true);
   });
 
   it('marca escalamiento cuando no existe respuesta segura', () => {
@@ -59,5 +62,30 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
 
     expect(response.requiere_escalamiento).toBe(true);
     expect(response.puede_crear_ticket).toBe(true);
+    expect(response.preguntas_seguimiento.length).toBeGreaterThan(0);
+  });
+
+  it('responde como Max a una conversacion normal', () => {
+    const response = responderChatbot({
+      role: 'empleado',
+      mensaje: 'hola max',
+    });
+
+    expect(response.asistente).toBe('Max');
+    expect(response.intent).toBe('saludo');
+    expect(response.respuesta).toMatch(/soy Max/i);
+    expect(response.pasos.length).toBeGreaterThan(0);
+  });
+
+  it('diagnostica problemas de acceso sin limitarse a mandar al modulo', () => {
+    const response = responderChatbot({
+      role: 'empleado',
+      mensaje: 'me dice credenciales incorrectas en la app',
+    });
+
+    expect(response.categoria).toBe('Acceso');
+    expect(response.intent).toBe('diagnostico');
+    expect(response.confianza).not.toBe('baja');
+    expect(response.pasos.join(' ')).toMatch(/api|correo|backend/i);
   });
 });

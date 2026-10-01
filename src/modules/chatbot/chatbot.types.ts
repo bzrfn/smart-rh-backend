@@ -6,6 +6,11 @@ export type ChatbotAction = {
   scope: 'web' | 'mobile' | 'both';
 };
 
+export type ChatbotMessageContext = {
+  author?: 'user' | 'assistant';
+  text?: string;
+};
+
 export type ChatbotKnowledgeEntry = {
   id: string;
   categoria: string;
@@ -13,13 +18,20 @@ export type ChatbotKnowledgeEntry = {
   roles: Array<ChatbotRole | 'all'>;
   keywords: string[];
   respuesta: string;
+  pasos: string[];
+  preguntas_seguimiento: string[];
   acciones: ChatbotAction[];
 };
 
 export type ChatbotResponse = {
+  asistente: 'Max';
   categoria: string;
   titulo: string;
+  intent: string;
+  confianza: 'alta' | 'media' | 'baja';
   respuesta: string;
+  pasos: string[];
+  preguntas_seguimiento: string[];
   acciones: ChatbotAction[];
   sugerencias: string[];
   requiere_escalamiento: boolean;
