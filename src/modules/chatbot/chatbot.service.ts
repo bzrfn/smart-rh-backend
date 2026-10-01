@@ -10,17 +10,17 @@ import {
 const ASSISTANT_NAME = 'Max' as const;
 
 const DEFAULT_SUGGESTIONS = [
-  'Max, no puedo registrar mi asistencia',
-  'Quiero revisar mi calendario laboral',
-  'Tengo un problema con mi incapacidad',
-  'Necesito levantar un ticket de soporte',
+  'No puedo registrar asistencia',
+  'Ver calendario laboral',
+  'Problema con incapacidad',
+  'Crear ticket de soporte',
 ];
 
 const ADMIN_SUGGESTIONS = [
-  'Max, como reviso pendientes de asistencia',
-  'Como valido una credencial QR',
-  'Que incapacidades requieren revision',
-  'Ayudame con usuarios y permisos',
+  'Pendientes de asistencia',
+  'Validar credencial QR',
+  'Incapacidades por revisar',
+  'Usuarios y permisos',
 ];
 
 const GREETING_WORDS = [
@@ -57,6 +57,25 @@ const PROBLEM_WORDS = [
   'incorrectas',
   'bloqueado',
   'urgente',
+];
+
+const DOMAIN_WORDS = [
+  'asistencia',
+  'entrada',
+  'salida',
+  'calendario',
+  'vacaciones',
+  'incapacidad',
+  'incapacidades',
+  'credencial',
+  'documentos',
+  'nomina',
+  'soporte',
+  'ticket',
+  'usuarios',
+  'permisos',
+  'terminal',
+  'qr',
 ];
 
 const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
@@ -577,13 +596,11 @@ function buildConversationResponse(
       intent: 'agradecimiento',
       confianza: 'alta',
       respuesta:
-        'Con gusto. Soy Max y sigo aqui por si quieres revisar otro tema de SMART RH o convertir esta conversacion en ticket.',
-      pasos: [
-        'Puedes hacer otra pregunta con lenguaje normal.',
-        'Si el caso quedo resuelto, no necesitas hacer nada mas.',
-      ],
+        'Con gusto. Me quedo atento por si quieres revisar otra duda o dejar el caso documentado en un ticket.',
+      pasos: [],
       preguntas_seguimiento: [
-        'Quieres revisar otro modulo o crear un ticket?',
+        'Quieres revisar otro tema?',
+        'Quieres crear un ticket con esta conversacion?',
       ],
       acciones: [
         {
@@ -598,7 +615,12 @@ function buildConversationResponse(
     };
   }
 
-  if (hasAny(message, GREETING_WORDS) && message.split(/\s+/).length <= 8) {
+  const looksLikeGreeting =
+    hasAny(message, GREETING_WORDS) &&
+    !hasAny(message, PROBLEM_WORDS) &&
+    !hasAny(message, DOMAIN_WORDS);
+
+  if (looksLikeGreeting) {
     return {
       asistente: ASSISTANT_NAME,
       categoria: 'Conversacion',
@@ -606,23 +628,14 @@ function buildConversationResponse(
       intent: 'saludo',
       confianza: 'alta',
       respuesta:
-        'Hola, soy Max, el asistente interno de SMART RH. Puedes escribirme como a una persona: explicame que intentas hacer, que error ves o que modulo quieres revisar, y te ayudo con pasos concretos.',
-      pasos: [
-        'Cuentalo en una frase, por ejemplo: no puedo registrar mi entrada.',
-        'Si hay mensaje de error, escribelo tal cual aparece.',
-        'Si hace falta seguimiento, puedo preparar un ticket con contexto.',
-      ],
+        'Claro. Soy Max y puedo ayudarte con SMART RH. Cuentalo como lo dirias normalmente: que intentabas hacer, en que pantalla estabas o que mensaje viste. Con eso te respondo paso a paso sin mandarte directo a un modulo.',
+      pasos: [],
       preguntas_seguimiento: [
         'Que quieres resolver ahora?',
         'Estas en portal o en app movil?',
+        'Te aparece algun mensaje de error?',
       ],
-      acciones: [
-        {
-          label: 'Abrir soporte',
-          target: 'Soporte',
-          scope: 'both',
-        },
-      ],
+      acciones: [],
       sugerencias: getSuggestions(role),
       requiere_escalamiento: false,
       puede_crear_ticket: true,
@@ -630,6 +643,23 @@ function buildConversationResponse(
   }
 
   return null;
+}
+
+function buildNaturalAnswer(
+  entry: ChatbotKnowledgeEntry,
+  isProblem: boolean,
+  confidence: ChatbotResponse['confianza']
+) {
+  const intro = isProblem
+    ? 'Entiendo. Vamos a revisarlo por partes.'
+    : 'Si, te ayudo.';
+
+  const closing =
+    confidence === 'baja'
+      ? ' Si me das la pantalla exacta y el mensaje que viste, puedo afinar el diagnostico.'
+      : ' Si quieres, dime que viste en pantalla y lo aterrizamos al caso exacto.';
+
+  return `${intro} ${entry.respuesta}${closing}`;
 }
 
 function buildUnauthorizedAdminResponse(role: ChatbotRole): ChatbotResponse {
@@ -763,9 +793,7 @@ export function responderChatbot(data: {
     titulo: best.entry.titulo,
     intent: isProblem ? 'diagnostico' : 'orientacion',
     confianza: confidence,
-    respuesta: isProblem
-      ? `Entiendo el problema. ${best.entry.respuesta}`
-      : best.entry.respuesta,
+    respuesta: buildNaturalAnswer(best.entry, isProblem, confidence),
     pasos: best.entry.pasos,
     preguntas_seguimiento: best.entry.preguntas_seguimiento,
     acciones: best.entry.acciones,
