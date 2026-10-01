@@ -2,25 +2,102 @@ import { crearTicketSoporte } from '../soporte/soporte.service.js';
 import { AppError } from '../../utils/AppError.js';
 import {
   ChatbotKnowledgeEntry,
+  ChatbotMessageContext,
   ChatbotResponse,
   ChatbotRole,
 } from './chatbot.types.js';
 
+const ASSISTANT_NAME = 'Max' as const;
+
 const DEFAULT_SUGGESTIONS = [
-  '¿Cómo reviso mi asistencia?',
-  '¿Dónde consulto mi calendario laboral?',
-  '¿Cómo levanto un ticket de soporte?',
-  '¿Dónde veo mis incapacidades?',
+  'Max, no puedo registrar mi asistencia',
+  'Quiero revisar mi calendario laboral',
+  'Tengo un problema con mi incapacidad',
+  'Necesito levantar un ticket de soporte',
 ];
 
 const ADMIN_SUGGESTIONS = [
-  '¿Cómo reviso pendientes de asistencia?',
-  '¿Cómo verifico una credencial QR?',
-  '¿Cómo reviso incapacidades?',
-  '¿Dónde administro usuarios y permisos?',
+  'Max, como reviso pendientes de asistencia',
+  'Como valido una credencial QR',
+  'Que incapacidades requieren revision',
+  'Ayudame con usuarios y permisos',
+];
+
+const GREETING_WORDS = [
+  'hola',
+  'buen dia',
+  'buenas',
+  'hey',
+  'max',
+  'que puedes hacer',
+  'quien eres',
+  'ayudame',
+];
+
+const THANKS_WORDS = [
+  'gracias',
+  'perfecto',
+  'listo',
+  'ok gracias',
+  'muy bien',
+];
+
+const PROBLEM_WORDS = [
+  'problema',
+  'error',
+  'falla',
+  'fallo',
+  'no puedo',
+  'no me deja',
+  'no carga',
+  'no aparece',
+  'se queda',
+  'pantalla blanca',
+  'credenciales incorrectas',
+  'incorrectas',
+  'bloqueado',
+  'urgente',
 ];
 
 const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
+  {
+    id: 'login-acceso',
+    categoria: 'Acceso',
+    titulo: 'Problemas para iniciar sesion',
+    roles: ['all'],
+    keywords: [
+      'login',
+      'iniciar sesion',
+      'acceso',
+      'credenciales',
+      'codigo',
+      'correo',
+      'contrasena',
+      'password',
+      'credenciales incorrectas',
+      'no puedo entrar',
+    ],
+    respuesta:
+      'Entiendo. Si el acceso marca credenciales incorrectas o no avanza, revisa primero que estes usando el flujo correcto y que el backend sea el ambiente esperado. En portal administrativo debe pasar por codigo de acceso cuando aplique; en movil debe consumir la API configurada en EXPO_PUBLIC_API_URL.',
+    pasos: [
+      'Confirma que el correo este escrito completo y sin espacios.',
+      'Verifica que la app o portal apunte a https://api.smart-rh.com.mx cuando estes validando produccion.',
+      'Si estas en desarrollo local, confirma que el backend este levantado y que el celular alcance esa red.',
+      'Si el error continua, levanta un ticket con el correo usado y la pantalla donde ocurre.',
+    ],
+    preguntas_seguimiento: [
+      'El error aparece en portal o en app movil?',
+      'Estas probando contra produccion o backend local?',
+      'Te aparece codigo de acceso o falla antes de llegar ahi?',
+    ],
+    acciones: [
+      {
+        label: 'Abrir soporte',
+        target: 'Soporte',
+        scope: 'both',
+      },
+    ],
+  },
   {
     id: 'asistencia-empleado',
     categoria: 'Asistencia',
@@ -34,17 +111,29 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'registro',
       'jornada',
       'checador',
+      'retardo',
+      'faltas',
     ],
     respuesta:
-      'Para asistencia puedes revisar tu historial, jornada semanal y registrar entrada o salida mediante QR desde la app móvil. Si un registro queda pendiente, el área administrativa puede revisarlo.',
+      'Para asistencia puedes revisar historial, jornada semanal y registros de entrada o salida. Si el QR no funciona, conviene validar permiso de camara, vigencia del QR y conexion con la API antes de generar un reporte.',
+    pasos: [
+      'Abre Mi asistencia para revisar si ya existe registro del dia.',
+      'Si vas a escanear QR, confirma permiso de camara y buena iluminacion.',
+      'Si el QR esta vencido, solicita uno nuevo o espera a que la terminal lo regenere.',
+      'Si existe registro pendiente, el administrador puede revisarlo desde Pendientes de asistencia.',
+    ],
+    preguntas_seguimiento: [
+      'El problema es al escanear QR o al consultar historial?',
+      'Te marca QR vencido, no autorizado o simplemente no responde?',
+    ],
     acciones: [
       {
-        label: 'Abrir Asistencia',
+        label: 'Abrir asistencia',
         target: 'Asistencia',
         scope: 'both',
       },
       {
-        label: 'Abrir Calendario laboral',
+        label: 'Abrir calendario laboral',
         target: 'CalendarioLaboral',
         scope: 'both',
       },
@@ -61,9 +150,21 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'aprobar asistencia',
       'rechazar asistencia',
       'revision asistencia',
+      'justificar asistencia',
+      'asistencia pendiente',
     ],
     respuesta:
-      'Como administrador puedes revisar pendientes de asistencia, aprobar, rechazar, justificar o corregir registros desde el panel administrativo móvil o el portal.',
+      'Como administrador puedes revisar pendientes de asistencia, validar el caso, aprobar, rechazar o dejar seguimiento. Max puede orientarte sobre el flujo, pero los cambios se hacen desde la herramienta administrativa protegida por rol.',
+    pasos: [
+      'Entra a Pendientes de asistencia desde el panel admin movil o portal.',
+      'Revisa empleado, fecha, tipo de registro y evidencia disponible.',
+      'Aprueba solo si el registro corresponde a la jornada real.',
+      'Rechaza o solicita correccion cuando falte evidencia o exista inconsistencia.',
+    ],
+    preguntas_seguimiento: [
+      'Quieres revisar pendientes generales o un empleado especifico?',
+      'El problema es aprobar, rechazar o que no carga la lista?',
+    ],
     acciones: [
       {
         label: 'Pendientes de asistencia',
@@ -71,7 +172,7 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
         scope: 'mobile',
       },
       {
-        label: 'Modulo Asistencia',
+        label: 'Modulo asistencia',
         target: '/portal/asistencia',
         scope: 'web',
       },
@@ -89,12 +190,24 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'eventos',
       'vacaciones calendario',
       'incapacidades calendario',
+      'resumen mensual',
+      'dia',
     ],
     respuesta:
-      'El calendario laboral concentra asistencia, vacaciones e incapacidades en una vista mensual. En móvil y portal puedes abrir tarjetas de resumen para revisar los eventos del mes o de un día seleccionado.',
+      'El calendario laboral concentra asistencia, vacaciones e incapacidades. Sirve para entender que ocurre en un dia o en todo el mes sin revisar cada modulo por separado.',
+    pasos: [
+      'Selecciona el mes que quieres revisar.',
+      'Toca un dia para ver sus eventos asociados.',
+      'Usa el resumen mensual para distinguir asistencia, vacaciones e incapacidades.',
+      'Si algo no aparece, revisa si el evento ya fue aprobado o si pertenece a otro periodo.',
+    ],
+    preguntas_seguimiento: [
+      'Quieres revisar eventos de un dia o el resumen del mes?',
+      'Buscas asistencia, vacaciones o incapacidades?',
+    ],
     acciones: [
       {
-        label: 'Abrir Calendario laboral',
+        label: 'Abrir calendario laboral',
         target: 'CalendarioLaboral',
         scope: 'both',
       },
@@ -111,12 +224,23 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'dias disponibles',
       'solicitud vacaciones',
       'saldo',
+      'periodo vacacional',
     ],
     respuesta:
-      'En Vacaciones puedes consultar días disponibles, enviar solicitudes y dar seguimiento al estado. Los eventos aprobados también aparecen en el calendario laboral.',
+      'En vacaciones puedes consultar dias disponibles, enviar solicitudes y dar seguimiento al estado. Si ya fueron aprobadas, tambien deben verse reflejadas en el calendario laboral.',
+    pasos: [
+      'Revisa tu saldo disponible antes de solicitar.',
+      'Captura fechas de inicio y fin.',
+      'Valida que no exista cruce con incapacidades u otro periodo aprobado.',
+      'Da seguimiento al estado de la solicitud.',
+    ],
+    preguntas_seguimiento: [
+      'Quieres consultar saldo o crear una solicitud?',
+      'La solicitud no aparece o fue rechazada?',
+    ],
     acciones: [
       {
-        label: 'Abrir Vacaciones',
+        label: 'Abrir vacaciones',
         target: 'Vacaciones',
         scope: 'both',
       },
@@ -135,12 +259,25 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'pdf',
       'comprobante',
       'validacion',
+      'revisar incapacidad',
+      'adjunto',
+      'archivo',
     ],
     respuesta:
-      'El modulo de incapacidades permite registrar una incapacidad, adjuntar comprobante y consultar validacion automatica. Administracion puede revisar casos pendientes o con observaciones.',
+      'El modulo de incapacidades permite registrar una incapacidad, adjuntar comprobante y consultar validacion automatica. Si hay observaciones, el administrador debe revisar la informacion antes de aprobar o rechazar.',
+    pasos: [
+      'Confirma que el archivo adjunto sea legible y corresponda al empleado.',
+      'Revisa fechas de inicio, fin y dias calculados.',
+      'Consulta la validacion automatica para detectar inconsistencias.',
+      'Si requiere seguimiento humano, crea ticket o solicita revision administrativa.',
+    ],
+    preguntas_seguimiento: [
+      'El problema es al registrar, adjuntar archivo o revisar el resultado?',
+      'La incapacidad aparece pendiente, aprobada, rechazada o con observaciones?',
+    ],
     acciones: [
       {
-        label: 'Abrir Incapacidades',
+        label: 'Abrir incapacidades',
         target: 'Incapacidades',
         scope: 'both',
       },
@@ -163,12 +300,23 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'expediente',
       'qr credencial',
       'identificacion',
+      'vigencia',
+      'validar credencial',
     ],
     respuesta:
-      'En Documentos puedes consultar contrato, expediente y credencial laboral. La credencial digital incluye QR y vigencia. La verificacion administrativa valida identidad, vigencia, usuario y estado.',
+      'En documentos puedes consultar contrato, expediente y credencial laboral. La credencial digital incluye QR y vigencia; la validacion administrativa confirma identidad, usuario, estado y fecha de expiracion.',
+    pasos: [
+      'Abre Documentos para consultar credencial o expediente.',
+      'Si eres admin, usa Verificar credencial QR para validar una credencial de empleado.',
+      'Si marca vencida o invalida, solicita renovacion o revisa el estado del usuario.',
+    ],
+    preguntas_seguimiento: [
+      'Quieres consultar tu credencial o verificar la de un empleado?',
+      'El resultado fue valida, vencida, invalida o no autorizada?',
+    ],
     acciones: [
       {
-        label: 'Abrir Documentos',
+        label: 'Abrir documentos',
         target: 'Documentos',
         scope: 'both',
       },
@@ -191,12 +339,22 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'salario',
       'sueldo',
       'periodo',
+      'comprobante de pago',
     ],
     respuesta:
-      'En Nomina puedes consultar periodos, pagos y registros economicos asociados a tu perfil. Si no ves informacion, puede depender de permisos o carga administrativa.',
+      'En nomina puedes consultar periodos, pagos y registros economicos asociados a tu perfil. Si no ves informacion, puede depender de permisos, periodo cargado o datos administrativos pendientes.',
+    pasos: [
+      'Abre Nomina y revisa el periodo seleccionado.',
+      'Confirma que tu usuario tenga permiso de nomina activo.',
+      'Si falta un recibo, solicita revision administrativa con periodo y fecha de pago.',
+    ],
+    preguntas_seguimiento: [
+      'No ves ningun recibo o falta un periodo especifico?',
+      'Estas revisando como empleado o administrador?',
+    ],
     acciones: [
       {
-        label: 'Abrir Nomina',
+        label: 'Abrir nomina',
         target: 'Nomina',
         scope: 'both',
       },
@@ -215,9 +373,20 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'desactivar',
       'admin',
       'accesos',
+      'crear usuario',
     ],
     respuesta:
-      'Como administrador puedes gestionar usuarios, permisos por modulo, estado de cuenta y accesos. Estos cambios deben realizarse desde las herramientas administrativas, no desde el flujo de empleado.',
+      'Como administrador puedes gestionar usuarios, permisos por modulo, estado de cuenta y accesos. Max puede ayudarte a decidir que revisar antes de cambiar permisos.',
+    pasos: [
+      'Identifica el usuario y confirma su rol actual.',
+      'Revisa que modulos necesita segun su actividad.',
+      'Activa solo permisos necesarios y evita mezclar herramientas admin con flujo de empleado.',
+      'Guarda cambios y pide al usuario cerrar e iniciar sesion si no ve el permiso.',
+    ],
+    preguntas_seguimiento: [
+      'Quieres crear usuario, activar cuenta o ajustar permisos?',
+      'El usuario es empleado, admin o tecnico?',
+    ],
     acciones: [
       {
         label: 'Usuarios y permisos',
@@ -244,12 +413,24 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'error',
       'incidencia',
       'no puedo',
+      'reporte',
+      'seguimiento',
     ],
     respuesta:
-      'Si el asistente no resuelve tu caso, puedes crear un ticket de soporte. El ticket queda registrado con categoria, prioridad, descripcion y seguimiento administrativo.',
+      'Si el caso no se puede resolver con pasos operativos, Max puede crear un ticket con el contexto de la conversacion para que soporte o administracion lo revise.',
+    pasos: [
+      'Describe que estabas intentando hacer.',
+      'Indica si ocurrio en portal o app movil.',
+      'Agrega el mensaje exacto de error si existe.',
+      'Crea el ticket para dejar evidencia y seguimiento.',
+    ],
+    preguntas_seguimiento: [
+      'Quieres que cree un ticket con esta conversacion?',
+      'El problema bloquea tu trabajo o solo es una duda?',
+    ],
     acciones: [
       {
-        label: 'Abrir Soporte',
+        label: 'Abrir soporte',
         target: 'Soporte',
         scope: 'both',
       },
@@ -265,12 +446,23 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'terminal asistencia',
       'autorizacion terminal',
       'qr terminal',
+      'autorizar terminal',
     ],
     respuesta:
-      'La Terminal de Asistencia es un flujo separado. Desde el portal administrativo se autoriza el acceso a terminal; no debe mezclarse con herramientas administrativas moviles ni con la verificacion de credenciales.',
+      'La Terminal de Asistencia es un flujo separado. Se autoriza desde el portal administrativo y no debe mezclarse con herramientas administrativas moviles ni con la verificacion de credenciales.',
+    pasos: [
+      'Abre Autorizar Terminal en el portal.',
+      'Valida que el dispositivo y codigo correspondan a la terminal esperada.',
+      'Autoriza solo terminales controladas por la empresa.',
+      'Si la terminal no carga, revisa conexion y sesion autorizada.',
+    ],
+    preguntas_seguimiento: [
+      'Necesitas autorizar una terminal o resolver un error de la terminal?',
+      'La terminal muestra codigo de autorizacion o pantalla en blanco?',
+    ],
     acciones: [
       {
-        label: 'Autorizar Terminal',
+        label: 'Autorizar terminal',
         target: '/portal/terminal-autorizacion',
         scope: 'web',
       },
@@ -284,6 +476,10 @@ function normalizeText(value?: string | null) {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
+}
+
+function compactText(value?: string | null) {
+  return normalizeText(value).replace(/\s+/g, ' ');
 }
 
 function normalizeRole(role?: string | null): ChatbotRole {
@@ -300,38 +496,203 @@ function canUseEntry(entry: ChatbotKnowledgeEntry, role: ChatbotRole) {
   return entry.roles.includes('all') || entry.roles.includes(role);
 }
 
-function scoreEntry(entry: ChatbotKnowledgeEntry, message: string) {
-  const searchable = [
-    entry.categoria,
-    entry.titulo,
-    ...entry.keywords,
-  ]
-    .map(normalizeText)
-    .join(' ');
-
-  let score = 0;
-
-  for (const keyword of entry.keywords) {
-    const normalizedKeyword = normalizeText(keyword);
-
-    if (message.includes(normalizedKeyword)) {
-      score += normalizedKeyword.length > 8 ? 3 : 2;
-    }
-  }
-
-  for (const word of message.split(/\s+/).filter(Boolean)) {
-    if (word.length >= 4 && searchable.includes(word)) {
-      score += 1;
-    }
-  }
-
-  return score;
+function hasAny(message: string, words: string[]) {
+  return words.some((word) => message.includes(normalizeText(word)));
 }
 
 function getSuggestions(role: ChatbotRole) {
   return role === 'admin'
     ? ADMIN_SUGGESTIONS
     : DEFAULT_SUGGESTIONS;
+}
+
+function buildSearchText(entry: ChatbotKnowledgeEntry) {
+  return [
+    entry.categoria,
+    entry.titulo,
+    entry.respuesta,
+    ...entry.keywords,
+    ...entry.pasos,
+  ]
+    .map(normalizeText)
+    .join(' ');
+}
+
+function scoreEntry(entry: ChatbotKnowledgeEntry, message: string) {
+  const searchable = buildSearchText(entry);
+  let score = 0;
+
+  for (const keyword of entry.keywords) {
+    const normalizedKeyword = normalizeText(keyword);
+
+    if (normalizedKeyword && message.includes(normalizedKeyword)) {
+      score += normalizedKeyword.length > 10 ? 5 : 3;
+    }
+  }
+
+  const words = message.split(/\s+/).filter((word) => word.length >= 4);
+
+  for (const word of words) {
+    if (searchable.includes(word)) {
+      score += 1;
+    }
+  }
+
+  if (hasAny(message, PROBLEM_WORDS)) {
+    score += entry.id === 'soporte' ? 2 : 0;
+  }
+
+  return score;
+}
+
+function buildContextMessage(
+  message: string,
+  historial?: ChatbotMessageContext[]
+) {
+  const recentContext = (historial || [])
+    .slice(-4)
+    .map((item) => item.text)
+    .filter(Boolean)
+    .map(compactText)
+    .join(' ');
+
+  return compactText([recentContext, message].filter(Boolean).join(' '));
+}
+
+function confidenceFromScore(score: number): ChatbotResponse['confianza'] {
+  if (score >= 9) return 'alta';
+  if (score >= 4) return 'media';
+  return 'baja';
+}
+
+function buildConversationResponse(
+  role: ChatbotRole,
+  message: string
+): ChatbotResponse | null {
+  if (hasAny(message, THANKS_WORDS)) {
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Conversacion',
+      titulo: 'Seguimos atentos',
+      intent: 'agradecimiento',
+      confianza: 'alta',
+      respuesta:
+        'Con gusto. Soy Max y sigo aqui por si quieres revisar otro tema de SMART RH o convertir esta conversacion en ticket.',
+      pasos: [
+        'Puedes hacer otra pregunta con lenguaje normal.',
+        'Si el caso quedo resuelto, no necesitas hacer nada mas.',
+      ],
+      preguntas_seguimiento: [
+        'Quieres revisar otro modulo o crear un ticket?',
+      ],
+      acciones: [
+        {
+          label: 'Abrir soporte',
+          target: 'Soporte',
+          scope: 'both',
+        },
+      ],
+      sugerencias: getSuggestions(role),
+      requiere_escalamiento: false,
+      puede_crear_ticket: true,
+    };
+  }
+
+  if (hasAny(message, GREETING_WORDS) && message.split(/\s+/).length <= 8) {
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Conversacion',
+      titulo: 'Max, asistente interno',
+      intent: 'saludo',
+      confianza: 'alta',
+      respuesta:
+        'Hola, soy Max, el asistente interno de SMART RH. Puedes escribirme como a una persona: explicame que intentas hacer, que error ves o que modulo quieres revisar, y te ayudo con pasos concretos.',
+      pasos: [
+        'Cuentalo en una frase, por ejemplo: no puedo registrar mi entrada.',
+        'Si hay mensaje de error, escribelo tal cual aparece.',
+        'Si hace falta seguimiento, puedo preparar un ticket con contexto.',
+      ],
+      preguntas_seguimiento: [
+        'Que quieres resolver ahora?',
+        'Estas en portal o en app movil?',
+      ],
+      acciones: [
+        {
+          label: 'Abrir soporte',
+          target: 'Soporte',
+          scope: 'both',
+        },
+      ],
+      sugerencias: getSuggestions(role),
+      requiere_escalamiento: false,
+      puede_crear_ticket: true,
+    };
+  }
+
+  return null;
+}
+
+function buildUnauthorizedAdminResponse(role: ChatbotRole): ChatbotResponse {
+  return {
+    asistente: ASSISTANT_NAME,
+    categoria: 'Permisos',
+    titulo: 'Funcion administrativa restringida',
+    intent: 'permiso_admin',
+    confianza: 'alta',
+    respuesta:
+      'Esa accion corresponde a herramientas administrativas. Tu sesion actual no tiene rol admin, por eso Max no debe guiarte a cambiar usuarios, permisos o revisiones administrativas.',
+    pasos: [
+      'Si necesitas esa accion, solicita apoyo a un administrador.',
+      'Si tu cuenta deberia ser admin, pide que revisen tu rol y vuelve a iniciar sesion.',
+      'No compartas credenciales para saltar permisos.',
+    ],
+    preguntas_seguimiento: [
+      'Quieres que te explique que puede hacer tu rol actual?',
+      'Quieres crear un ticket para solicitar revision de permisos?',
+    ],
+    acciones: [
+      {
+        label: 'Abrir soporte',
+        target: 'Soporte',
+        scope: 'both',
+      },
+    ],
+    sugerencias: getSuggestions(role),
+    requiere_escalamiento: true,
+    puede_crear_ticket: true,
+  };
+}
+
+function buildFallbackResponse(role: ChatbotRole): ChatbotResponse {
+  return {
+    asistente: ASSISTANT_NAME,
+    categoria: 'Soporte',
+    titulo: 'Necesito un poco mas de contexto',
+    intent: 'aclaracion',
+    confianza: 'baja',
+    respuesta:
+      'No quiero inventar una respuesta. Puedo ayudarte mejor si me dices que estabas intentando hacer, en que pantalla estabas y que mensaje viste. Con eso puedo darte pasos o crear un ticket con contexto.',
+    pasos: [
+      'Indica si fue en portal o app movil.',
+      'Escribe el modulo relacionado: asistencia, calendario, incapacidades, documentos, nomina o soporte.',
+      'Agrega el error exacto si aparece.',
+    ],
+    preguntas_seguimiento: [
+      'En que pantalla ocurrio?',
+      'Que esperabas que pasara y que paso realmente?',
+      'Quieres crear un ticket con esta informacion?',
+    ],
+    acciones: [
+      {
+        label: 'Crear ticket de soporte',
+        target: 'Soporte',
+        scope: 'both',
+      },
+    ],
+    sugerencias: getSuggestions(role),
+    requiere_escalamiento: true,
+    puede_crear_ticket: true,
+  };
 }
 
 export function obtenerSugerenciasChatbot(role?: string | null) {
@@ -342,12 +703,38 @@ export function obtenerSugerenciasChatbot(role?: string | null) {
 export function responderChatbot(data: {
   role?: string | null;
   mensaje?: string | null;
+  historial?: ChatbotMessageContext[];
 }): ChatbotResponse {
   const role = normalizeRole(data.role);
-  const mensaje = normalizeText(data.mensaje);
+  const rawMessage = String(data.mensaje || '').trim();
+  const mensaje = compactText(rawMessage);
+  const messageWithContext = buildContextMessage(
+    rawMessage,
+    data.historial
+  );
 
   if (!mensaje) {
     throw new AppError('El mensaje es obligatorio', 400);
+  }
+
+  const conversational = buildConversationResponse(role, mensaje);
+  if (conversational) {
+    return conversational;
+  }
+
+  const adminIntent = hasAny(messageWithContext, [
+    'administro usuarios',
+    'usuarios y permisos',
+    'aprobar asistencia',
+    'rechazar asistencia',
+    'verificar credencial',
+    'credencial qr',
+    'revision admin',
+    'autorizar terminal',
+  ]);
+
+  if (adminIntent && role !== 'admin') {
+    return buildUnauthorizedAdminResponse(role);
   }
 
   const entries = KNOWLEDGE_BASE.filter((entry) =>
@@ -357,38 +744,35 @@ export function responderChatbot(data: {
   const ranked = entries
     .map((entry) => ({
       entry,
-      score: scoreEntry(entry, mensaje),
+      score: scoreEntry(entry, messageWithContext),
     }))
     .sort((a, b) => b.score - a.score);
 
   const best = ranked[0];
 
-  if (!best || best.score <= 0) {
-    return {
-      categoria: 'Soporte',
-      titulo: 'No encontre una respuesta suficiente',
-      respuesta:
-        'No tengo una respuesta segura para esa consulta. Puedo ayudarte a crear un ticket de soporte para que el area administrativa lo revise con contexto.',
-      acciones: [
-        {
-          label: 'Crear ticket de soporte',
-          target: 'Soporte',
-          scope: 'both',
-        },
-      ],
-      sugerencias: getSuggestions(role),
-      requiere_escalamiento: true,
-      puede_crear_ticket: true,
-    };
+  if (!best || best.score <= 1) {
+    return buildFallbackResponse(role);
   }
 
+  const isProblem = hasAny(messageWithContext, PROBLEM_WORDS);
+  const confidence = confidenceFromScore(best.score);
+
   return {
+    asistente: ASSISTANT_NAME,
     categoria: best.entry.categoria,
     titulo: best.entry.titulo,
-    respuesta: best.entry.respuesta,
+    intent: isProblem ? 'diagnostico' : 'orientacion',
+    confianza: confidence,
+    respuesta: isProblem
+      ? `Entiendo el problema. ${best.entry.respuesta}`
+      : best.entry.respuesta,
+    pasos: best.entry.pasos,
+    preguntas_seguimiento: best.entry.preguntas_seguimiento,
     acciones: best.entry.acciones,
-    sugerencias: getSuggestions(role),
-    requiere_escalamiento: false,
+    sugerencias: best.entry.preguntas_seguimiento.length
+      ? best.entry.preguntas_seguimiento
+      : getSuggestions(role),
+    requiere_escalamiento: confidence === 'baja',
     puede_crear_ticket: true,
   };
 }
@@ -408,20 +792,27 @@ export async function crearTicketDesdeChatbot(data: {
     usuario_id: data.usuario_id,
     categoria: 'Chatbot SMART RH',
     prioridad: data.respuesta.requiere_escalamiento ? 'media' : 'baja',
-    titulo: `Consulta desde asistente: ${data.respuesta.categoria}`.slice(
+    titulo: `Consulta con Max: ${data.respuesta.categoria}`.slice(
       0,
       120
     ),
     descripcion: [
-      'Consulta registrada desde el asistente SMART RH.',
+      'Consulta registrada desde Max, asistente interno SMART RH.',
       '',
       `Pregunta del usuario: ${mensaje}`,
+      '',
+      `Categoria detectada: ${data.respuesta.categoria}`,
+      `Intencion: ${data.respuesta.intent}`,
+      `Confianza: ${data.respuesta.confianza}`,
       '',
       `Respuesta entregada: ${data.respuesta.respuesta}`,
     ].join('\n'),
     metadata: {
-      origen: 'chatbot',
+      origen: 'max_chatbot',
+      asistente: ASSISTANT_NAME,
       categoria_respuesta: data.respuesta.categoria,
+      intent: data.respuesta.intent,
+      confianza: data.respuesta.confianza,
       requiere_escalamiento: data.respuesta.requiere_escalamiento,
     },
   });

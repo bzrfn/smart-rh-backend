@@ -32,6 +32,25 @@ function shouldCreateTicket(body: any) {
   );
 }
 
+function normalizeHistory(body: any) {
+  const source = Array.isArray(body?.historial)
+    ? body.historial
+    : Array.isArray(body?.messages)
+      ? body.messages
+      : [];
+
+  return source
+    .slice(-6)
+    .map((item: any) => ({
+      author:
+        item?.author === 'assistant' || item?.role === 'assistant'
+          ? 'assistant'
+          : 'user',
+      text: String(item?.text || item?.content || '').slice(0, 700),
+    }))
+    .filter((item: any) => item.text.trim());
+}
+
 export async function responderChatbotController(
   req: AuthRequest,
   res: Response,
@@ -44,6 +63,7 @@ export async function responderChatbotController(
     const respuesta = responderChatbot({
       role: auth.role,
       mensaje,
+      historial: normalizeHistory(req.body),
     });
 
     let ticket = null;
