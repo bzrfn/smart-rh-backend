@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import {
+  obtenerSugerenciasChatbot,
   responderChatbot,
 } from '../../src/modules/chatbot/chatbot.service.js';
 
@@ -88,5 +89,13 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(response.intent).toBe('diagnostico');
     expect(response.confianza).not.toBe('baja');
     expect(response.pasos.join(' ')).toMatch(/api|correo|backend/i);
+  });
+
+  it('mantiene sugerencias compactas para el widget flotante', () => {
+    const suggestions = obtenerSugerenciasChatbot('empleado');
+
+    expect(suggestions.length).toBeGreaterThanOrEqual(3);
+    expect(suggestions.every((item) => item.length <= 24)).toBe(true);
+    expect(suggestions).toContain('Tengo un problema');
   });
 });

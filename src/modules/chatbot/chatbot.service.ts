@@ -10,16 +10,16 @@ import {
 const ASSISTANT_NAME = 'Max' as const;
 
 const DEFAULT_SUGGESTIONS = [
-  'No puedo registrar asistencia',
-  'Ver calendario laboral',
-  'Problema con incapacidad',
-  'Crear ticket de soporte',
+  'Tengo un problema',
+  'Revisar mi calendario',
+  'Ayuda con asistencia',
+  'Crear un ticket',
 ];
 
 const ADMIN_SUGGESTIONS = [
-  'Pendientes de asistencia',
-  'Validar credencial QR',
-  'Incapacidades por revisar',
+  'Revisar pendientes',
+  'Validar una credencial',
+  'Ver incapacidades',
   'Usuarios y permisos',
 ];
 
