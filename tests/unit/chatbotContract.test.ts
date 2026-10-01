@@ -99,4 +99,15 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(suggestions.every((item) => item.length <= 24)).toBe(true);
     expect(suggestions).toContain('Tengo un problema');
   });
+
+  it('explica su aprendizaje contextual sin mandar directo a un modulo', () => {
+    const response = responderChatbot({
+      role: 'empleado',
+      mensaje: 'puedes aprender del contexto de la conversacion?',
+    });
+
+    expect(response.intent).toBe('aprendizaje_contextual');
+    expect(response.respuesta).toMatch(/contexto reciente/i);
+    expect(response.acciones).toHaveLength(0);
+  });
 });

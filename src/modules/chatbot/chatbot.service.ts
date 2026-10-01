@@ -42,6 +42,16 @@ const THANKS_WORDS = [
   'muy bien',
 ];
 
+const LEARNING_WORDS = [
+  'aprende',
+  'aprendizaje',
+  'aprendas',
+  'recuerda',
+  'contexto',
+  'mas inteligente',
+  'mejor respuesta',
+];
+
 const PROBLEM_WORDS = [
   'problema',
   'error',
@@ -615,6 +625,28 @@ function buildConversationResponse(
     };
   }
 
+  if (hasAny(message, LEARNING_WORDS)) {
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Conversacion',
+      titulo: 'Contexto de la conversacion',
+      intent: 'aprendizaje_contextual',
+      confianza: 'alta',
+      respuesta:
+        'Puedo usar el contexto reciente de esta conversacion para responder con mas precision dentro de SMART RH. Si me describes que intentabas hacer, que pantalla viste y que resultado esperabas, ajusto la respuesta al caso en lugar de mandarte directo a un modulo.',
+      pasos: [],
+      preguntas_seguimiento: [
+        'Que intentabas hacer exactamente?',
+        'En que pantalla estabas?',
+        'Que resultado esperabas ver?',
+      ],
+      acciones: [],
+      sugerencias: getSuggestions(role),
+      requiere_escalamiento: false,
+      puede_crear_ticket: true,
+    };
+  }
+
   const looksLikeGreeting =
     hasAny(message, GREETING_WORDS) &&
     !hasAny(message, PROBLEM_WORDS) &&
@@ -651,8 +683,8 @@ function buildNaturalAnswer(
   confidence: ChatbotResponse['confianza']
 ) {
   const intro = isProblem
-    ? 'Entiendo. Vamos a revisarlo por partes.'
-    : 'Si, te ayudo.';
+    ? 'Te entiendo. Vamos a revisarlo por partes.'
+    : 'Va, lo revisamos.';
 
   const closing =
     confidence === 'baja'
@@ -701,7 +733,7 @@ function buildFallbackResponse(role: ChatbotRole): ChatbotResponse {
     intent: 'aclaracion',
     confianza: 'baja',
     respuesta:
-      'No quiero inventar una respuesta. Puedo ayudarte mejor si me dices que estabas intentando hacer, en que pantalla estabas y que mensaje viste. Con eso puedo darte pasos o crear un ticket con contexto.',
+      'No quiero inventar una respuesta. Si me das un poco mas de contexto, puedo revisar contigo lo que paso y convertirlo en pasos claros: que intentabas hacer, en que pantalla estabas y que mensaje viste.',
     pasos: [
       'Indica si fue en portal o app movil.',
       'Escribe el modulo relacionado: asistencia, calendario, incapacidades, documentos, nomina o soporte.',
