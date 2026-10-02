@@ -3,6 +3,7 @@ import path from 'path';
 import {
   obtenerSugerenciasChatbot,
   responderChatbot,
+  responderChatbotConDatos,
 } from '../../src/modules/chatbot/chatbot.service.js';
 
 describe('Cambio #6 - Chatbot integral SMART RH', () => {
@@ -179,7 +180,8 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
       'utf8'
     );
 
-    expect(service).toMatch(/PROJECT_KNOWLEDGE_LINES/);
+    expect(service).toMatch(/PROJECT_INTERNAL_KNOWLEDGE_LINES/);
+    expect(service).toMatch(/PROJECT_SAFE_OPERATIONAL_LINES/);
     expect(service).toMatch(/findEmployeeCandidates/);
     expect(service).toMatch(/getEmployeeOperationalData/);
     expect(service).toMatch(/contratos/);
@@ -192,6 +194,44 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(service).not.toMatch(/SELECT[\s\S]{0,500}qr_token[\s\S]{0,500}FROM asistencias/);
     expect(controller).toMatch(/await responderChatbotConDatos/);
     expect(controller).toMatch(/usuarioId: auth\.usuarioId/);
+  });
+
+
+  it('no expone rutas tecnicas ni stack en respuestas operativas', async () => {
+    const response = await responderChatbotConDatos({
+      role: 'empleado',
+      canal: 'web',
+      usuarioId: 1,
+      mensaje: 'que rutas y endpoints tiene el proyecto',
+    });
+
+    const visible = [
+      response.respuesta,
+      ...(response.pasos || []),
+      ...(response.preguntas_seguimiento || []),
+    ].join(' ');
+
+    expect(visible).not.toMatch(/\/auth|\/users|\/roles|\/incapacidades|Node\.js|Express|TypeScript|MySQL|MongoDB|JWT/i);
+    expect(visible).toMatch(/modulo|Usuarios|Asistencia|Incapacidades|permisos/i);
+  });
+
+  it('responde incapacidades pendientes como flujo operativo y no como mapa tecnico', async () => {
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      mensaje: 'Como puedo revisar las incapacidades pendientes de un empleado?',
+    });
+
+    const visible = [
+      response.respuesta,
+      ...(response.pasos || []),
+      ...(response.preguntas_seguimiento || []),
+    ].join(' ');
+
+    expect(response.categoria).toBe('Incapacidades');
+    expect(visible).toMatch(/incapacidad|empleado|adjunto|aprobar|rechazar|revision/i);
+    expect(visible).not.toMatch(/\/auth|\/users|Node\.js|Express|TypeScript|MySQL|MongoDB|JWT/i);
   });
 
 });

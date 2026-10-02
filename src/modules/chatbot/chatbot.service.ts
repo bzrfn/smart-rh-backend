@@ -599,6 +599,10 @@ function isAdminInvitationIntent(message: string) {
 }
 
 function resolveDirectEntryId(message: string) {
+  if (/incapacidades?|incapacidad/.test(message) && /pendiente|pendientes|revisar|revision|empleado|colaborador/.test(message)) {
+    return 'incapacidades';
+  }
+
   if (isAdminInvitationIntent(message)) {
     return 'usuarios-admin';
   }
@@ -889,18 +893,24 @@ type EmployeeLookup = {
   nombre?: string;
 };
 
-const PROJECT_KNOWLEDGE_LINES = [
-  'SMART RH usa backend Node.js, Express, TypeScript, MySQL, JWT y MongoDB para auditoria/notificaciones.',
-  'El portal web esta construido con React, Vite y TypeScript; la app movil usa React Native con Expo.',
-  'Roles principales: admin, empleado/usuario, tecnico y terminal_asistencia para flujo separado de terminal.',
-  'Rutas principales backend: /auth, /users, /roles, /contratos, /nominas, /vacaciones, /asistencia, /permisos, /documentos, /notificaciones, /actividad, /soporte, /etl, /contacto, /ml, /wearables, /kmeans, /analytics, /integrations, /calendario, /chatbot e /incapacidades.',
-  'Usuarios y permisos administra usuarios, roles, estado activo, modulos habilitados y altas administrativas mediante invitacion cuando el rol es admin.',
-  'Asistencia incluye QR, entrada/salida, pendientes, revision administrativa, correccion, justificacion y terminal autorizada separada del flujo movil.',
-  'Incapacidades permite registro por empleado, comprobante PDF, analisis/validacion, revision admin, aprobacion, rechazo e historial de revisiones.',
-  'Calendario laboral consolida asistencia, vacaciones e incapacidades para consultar eventos por mes y dia.',
-  'Documentos maneja contrato PDF, foto de perfil y credencial digital con QR y verificacion administrativa.',
-  'ETL, ML, KMeans y Analytics generan analisis de usuarios, nomina, vacaciones, predicciones y metricas administrativas.',
-  'Max debe usar el canal recibido: web significa portal; mobile significa app movil. No debe preguntar de nuevo si fue portal o app cuando el canal ya viene en la peticion.',
+const PROJECT_INTERNAL_KNOWLEDGE_LINES = [
+  'Backend Node.js, Express, TypeScript, MySQL, JWT y MongoDB para auditoria/notificaciones.',
+  'Portal web React, Vite y TypeScript; app movil React Native con Expo.',
+  'Rutas internas backend y modulos protegidos por JWT, rol y permisos.',
+  'Usuarios y permisos administra usuarios, roles, estado activo, modulos habilitados e invitaciones.',
+  'Asistencia incluye QR, entrada/salida, pendientes, revision administrativa, correccion, justificacion y terminal autorizada.',
+  'Incapacidades permite registro por empleado, comprobante PDF, analisis/validacion, revision admin, aprobacion, rechazo e historial.',
+  'Calendario laboral consolida asistencia, vacaciones e incapacidades por mes y dia.',
+  'Documentos maneja contrato PDF, foto de perfil y credencial digital con QR.',
+  'ETL, ML, KMeans y Analytics generan analisis y metricas administrativas.',
+  'Max usa canal web/mobile recibido en la peticion y no debe preguntar de nuevo el canal.',
+];
+
+const PROJECT_SAFE_OPERATIONAL_LINES = [
+  'Puedo orientarte por modulo visible: Usuarios y permisos, Asistencia, Incapacidades, Documentos, Vacaciones, Nomina, Calendario, Credenciales o Soporte.',
+  'Si buscas un flujo administrativo, primero confirmo tu rol y despues te explico los pasos dentro del portal o la app.',
+  'Si buscas informacion de un empleado, solo la muestro cuando tu rol lo permite y evitando datos sensibles.',
+  'No muestro identificadores internos, stack tecnico, tokens, hashes, QR privados ni detalles de infraestructura en respuestas operativas.',
 ];
 
 function isProjectKnowledgeIntent(message: string) {
@@ -921,23 +931,34 @@ function isProjectKnowledgeIntent(message: string) {
 
 function buildProjectKnowledgeResponse(
   role: ChatbotRole,
-  channel: ChatbotChannel
+  channel: ChatbotChannel,
+  currentMessage = ''
 ): ChatbotResponse {
+  const technicalIntent =
+    role === 'admin' &&
+    /diagnostico tecnico|debug|arquitectura interna|revision tecnica|infraestructura|stack tecnico/i.test(currentMessage);
+
+  const safeTechnicalSummary = [
+    'Uso internamente el mapa tecnico del proyecto para diagnosticar, pero no expongo identificadores internos, secretos ni detalles de infraestructura en una conversacion operativa.',
+    'Para revisar un problema tecnico, dime el modulo afectado, el sintoma visible y el rol con el que ocurrio.',
+    'Si necesitas trazabilidad tecnica formal, conviene levantar una tarea interna con evidencias y logs controlados.',
+  ];
+
   return {
     asistente: ASSISTANT_NAME,
     categoria: 'Conocimiento del proyecto',
     titulo: 'Mapa funcional SMART RH',
-    intent: 'conocimiento_proyecto',
+    intent: technicalIntent ? 'diagnostico_tecnico_seguro' : 'conocimiento_operativo',
     confianza: 'alta',
     respuesta:
       channel === 'mobile'
-        ? 'Tengo cargado el contexto funcional de SMART RH y estoy tomando en cuenta que consultas desde la app movil. Puedo orientarte por modulo, ruta, rol o flujo operativo.'
-        : 'Tengo cargado el contexto funcional de SMART RH y estoy tomando en cuenta que consultas desde el portal web. Puedo orientarte por modulo, ruta, rol o flujo operativo.',
-    pasos: PROJECT_KNOWLEDGE_LINES,
+        ? 'Tengo contexto funcional de SMART RH y se que estas consultando desde la app movil. Te voy a guiar por flujos visibles y permisos, sin exponer informacion tecnica interna.'
+        : 'Tengo contexto funcional de SMART RH y se que estas consultando desde el portal web. Te voy a guiar por flujos visibles y permisos, sin exponer informacion tecnica interna.',
+    pasos: technicalIntent ? safeTechnicalSummary : PROJECT_SAFE_OPERATIONAL_LINES,
     preguntas_seguimiento: [
-      'Quieres el flujo de un modulo especifico?',
-      'Quieres que revise una ruta o endpoint concreto?',
-      'Quieres consultar informacion de un empleado?',
+      'Que modulo quieres revisar?',
+      'Que rol estas usando en este momento?',
+      'Quieres un flujo operativo o un diagnostico seguro del problema?',
     ],
     acciones: [],
     sugerencias: [
@@ -1423,8 +1444,17 @@ export async function responderChatbotConDatos(
     throw new AppError('El mensaje es obligatorio', 400);
   }
 
-  if (isProjectKnowledgeIntent(messageWithContext)) {
-    return buildProjectKnowledgeResponse(role, channel);
+  if (isProjectKnowledgeIntent(rawMessage)) {
+    return buildProjectKnowledgeResponse(role, channel, rawMessage);
+  }
+
+  const isOperationalIncapacityFlow =
+    /incapacidades?|incapacidad/.test(messageWithContext) &&
+    /pendiente|pendientes|revisar|revision|aprobar|rechazar/.test(messageWithContext) &&
+    !/correo|id\s*\d+|informacion|datos|perfil|resumen|detalle|estatus|estado|expediente/.test(messageWithContext);
+
+  if (isOperationalIncapacityFlow) {
+    return responderChatbot(data);
   }
 
   const employeeDataResponse = await buildEmployeeDataResponse(
