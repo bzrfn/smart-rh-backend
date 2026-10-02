@@ -8,6 +8,7 @@ import {
 } from './chatbot.types.js';
 import { crearTicketSoporte } from '../soporte/soporte.service.js';
 import { AppError } from '../../utils/AppError.js';
+import { pool } from '../../config/db.js';
 
 const ASSISTANT_NAME = 'Max';
 
@@ -397,39 +398,53 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
   {
     id: 'usuarios-admin',
     categoria: 'Usuarios y permisos',
-    titulo: 'Administracion de usuarios',
+    titulo: 'Invitar y administrar usuarios',
     roles: ['admin'],
     keywords: [
       'usuarios',
       'permisos',
       'roles',
       'activar usuario',
-      'desactivar',
+      'desactivar usuario',
       'admin',
-      'accesos',
-      'crear usuario',
+      'administrador',
+      'nuevo admin',
+      'nuevo administrador',
+      'agregar admin',
+      'agregar un admin',
+      'agregar administrador',
+      'agregar un administrador',
+      'crear admin',
+      'crear administrador',
+      'registrar administrador',
+      'dar de alta administrador',
+      'invitar admin',
+      'invitar administrador',
+      'invitar a un administrador',
       'invitar usuario',
       'invitacion',
+      'inivtacion',
       'enviar invitacion',
+      'enviarle su invitacion',
       'mandar invitacion',
-      'nuevo administrador',
-      'agregar administrador',
-      'registrar administrador',
-      'crear administrador',
+      'mandarle invitacion',
+      'correo administrador',
+      'crud usuarios',
     ],
     respuesta:
-      'Para invitar o agregar un nuevo administrador en SMART RH, debes ir a Usuarios y permisos. Desde ahi se crea o registra el usuario, se asigna el rol admin, se revisan los permisos por modulo y se envia la invitacion al correo correspondiente cuando el flujo de invitacion este disponible.',
+      'Si, te ayudo con ese flujo. Para agregar un administrador no necesitas ir a soporte: en el portal entra a Usuarios y permisos, crea o invita al usuario, asigna el rol admin y valida los permisos de modulos antes de enviar la invitacion al correo.',
     pasos: [
-      'Abre Usuarios y permisos desde el portal administrativo.',
-      'Crea el usuario o selecciona la accion de invitacion si ya existe en el CRUD.',
-      'Captura nombre, correo y datos base del usuario.',
-      'Asigna el rol admin y activa solo los modulos administrativos necesarios.',
-      'Envia la invitacion y pide al nuevo administrador completar acceso desde su correo.',
+      'En el portal web abre Usuarios y permisos desde el menu administrativo.',
+      'Selecciona Nuevo usuario, Crear usuario o Enviar invitacion, segun el boton disponible en el CRUD.',
+      'Captura nombre, correo y datos base del nuevo administrador.',
+      'Asigna el rol admin y confirma que los permisos de modulos correspondan a lo que realmente necesita.',
+      'Envia la invitacion y verifica que el usuario quede como pendiente, invitado o activo segun el flujo configurado.',
+      'Pide al nuevo administrador abrir el correo de invitacion, completar el acceso y validar inicio de sesion.',
     ],
     preguntas_seguimiento: [
       'Ya tienes el correo del nuevo administrador?',
-      'Quieres crearlo desde cero o cambiar el rol de un usuario existente?',
-      'Necesita acceso a todos los modulos admin o solo a algunos?',
+      'Quieres darle acceso admin completo o solo a algunos modulos?',
+      'Te aparece el boton de crear usuario o el de enviar invitacion?',
     ],
     acciones: [
       {
@@ -572,6 +587,25 @@ function buildSearchText(entry: ChatbotKnowledgeEntry) {
     .join(' ');
 }
 
+function isAdminInvitationIntent(message: string) {
+  const talksAboutAdmin =
+    /\badmin\b|administrador|administradora|administrativo|administrativa/.test(message);
+  const talksAboutInvite =
+    /invit|inivt|agreg|crear|nuevo|nueva|alta|registr|correo|mandar|enviar/.test(message);
+  const talksAboutUser =
+    /usuario|cuenta|acceso|permiso|rol|correo|admin/.test(message);
+
+  return talksAboutAdmin && talksAboutInvite && talksAboutUser;
+}
+
+function resolveDirectEntryId(message: string) {
+  if (isAdminInvitationIntent(message)) {
+    return 'usuarios-admin';
+  }
+
+  return null;
+}
+
 function scoreEntry(entry: ChatbotKnowledgeEntry, message: string) {
   const searchable = buildSearchText(entry);
   let score = 0;
@@ -580,7 +614,7 @@ function scoreEntry(entry: ChatbotKnowledgeEntry, message: string) {
     const normalizedKeyword = normalizeText(keyword);
 
     if (normalizedKeyword && message.includes(normalizedKeyword)) {
-      score += normalizedKeyword.length > 10 ? 5 : 3;
+      score += normalizedKeyword.length > 10 ? 6 : 3;
     }
   }
 
@@ -592,7 +626,11 @@ function scoreEntry(entry: ChatbotKnowledgeEntry, message: string) {
     }
   }
 
-  if (hasAny(message, PROBLEM_WORDS)) {
+  if (entry.id === resolveDirectEntryId(message)) {
+    score += 80;
+  }
+
+  if (hasAny(message, PROBLEM_WORDS) && !resolveDirectEntryId(message)) {
     score += entry.id === 'soporte' ? 2 : 0;
   }
 
@@ -721,18 +759,18 @@ function buildNaturalAnswer(
   channel: ChatbotChannel
 ) {
   const intro = isProblem
-    ? 'Te entiendo. Vamos por partes y sin brincar directo a soporte.'
+    ? 'Te entiendo. Vamos por partes y lo resolvemos desde el flujo correcto.'
     : 'Va, lo revisamos con calma.';
-
-  const closing =
-    confidence === 'baja'
-      ? ' Dame la pantalla exacta y el mensaje que viste para afinar el diagnostico; si despues de eso no queda, dejamos un ticket bien armado.'
-      : ' Dime que viste en pantalla y lo aterrizamos al caso exacto antes de pensar en ticket.';
 
   const channelContext =
     channel === 'mobile'
       ? ' Estoy tomando en cuenta que estas escribiendo desde la app movil.'
       : ' Estoy tomando en cuenta que estas en el portal web.';
+
+  const closing =
+    confidence === 'baja'
+      ? ' Si despues de revisar estos datos no queda claro, ahi si dejamos un ticket con el contexto completo.'
+      : ' Te dejo el camino directo y despues afinamos cualquier detalle que no aparezca igual en tu pantalla.';
 
   return `${intro} ${entry.respuesta}${channelContext}${closing}`;
 }
@@ -741,21 +779,27 @@ function adaptFollowUpQuestions(
   questions: string[],
   channel: ChatbotChannel
 ) {
-  if (channel !== 'mobile') return questions;
-
   return questions
     .filter((item) => !/portal o app movil/i.test(item))
-    .map((item) =>
-      /pantalla/i.test(item)
-        ? item
-        : item.replace(/portal|app movil/gi, 'app movil')
-    );
+    .map((item) => {
+      if (channel === 'mobile') {
+        return item.replace(/portal web|portal|app movil/gi, 'app movil');
+      }
+
+      return item.replace(/app movil|movil/gi, 'portal web');
+    });
 }
 
 function adaptSteps(steps: string[], channel: ChatbotChannel) {
-  if (channel !== 'mobile') return steps;
+  return steps
+    .filter((item) => !/portal o app movil/i.test(item))
+    .map((item) => {
+      if (channel === 'mobile') {
+        return item.replace(/portal web|portal|app movil/gi, 'app movil');
+      }
 
-  return steps.filter((item) => !/portal o app movil/i.test(item));
+      return item.replace(/app movil|movil/gi, 'portal web');
+    });
 }
 
 function buildUnauthorizedAdminResponse(role: ChatbotRole): ChatbotResponse {
@@ -831,6 +875,442 @@ function buildFallbackResponse(
   };
 }
 
+type ChatbotRuntimeRequest = {
+  role?: string | null;
+  mensaje?: string | null;
+  historial?: ChatbotMessageContext[];
+  canal?: string | null;
+  usuarioId?: number | null;
+};
+
+type EmployeeLookup = {
+  id?: number;
+  correo?: string;
+  nombre?: string;
+};
+
+const PROJECT_KNOWLEDGE_LINES = [
+  'SMART RH usa backend Node.js, Express, TypeScript, MySQL, JWT y MongoDB para auditoria/notificaciones.',
+  'El portal web esta construido con React, Vite y TypeScript; la app movil usa React Native con Expo.',
+  'Roles principales: admin, empleado/usuario, tecnico y terminal_asistencia para flujo separado de terminal.',
+  'Rutas principales backend: /auth, /users, /roles, /contratos, /nominas, /vacaciones, /asistencia, /permisos, /documentos, /notificaciones, /actividad, /soporte, /etl, /contacto, /ml, /wearables, /kmeans, /analytics, /integrations, /calendario, /chatbot e /incapacidades.',
+  'Usuarios y permisos administra usuarios, roles, estado activo, modulos habilitados y altas administrativas mediante invitacion cuando el rol es admin.',
+  'Asistencia incluye QR, entrada/salida, pendientes, revision administrativa, correccion, justificacion y terminal autorizada separada del flujo movil.',
+  'Incapacidades permite registro por empleado, comprobante PDF, analisis/validacion, revision admin, aprobacion, rechazo e historial de revisiones.',
+  'Calendario laboral consolida asistencia, vacaciones e incapacidades para consultar eventos por mes y dia.',
+  'Documentos maneja contrato PDF, foto de perfil y credencial digital con QR y verificacion administrativa.',
+  'ETL, ML, KMeans y Analytics generan analisis de usuarios, nomina, vacaciones, predicciones y metricas administrativas.',
+  'Max debe usar el canal recibido: web significa portal; mobile significa app movil. No debe preguntar de nuevo si fue portal o app cuando el canal ya viene en la peticion.',
+];
+
+function isProjectKnowledgeIntent(message: string) {
+  return hasAny(message, [
+    'que sabes del proyecto',
+    'informacion del proyecto',
+    'rutas',
+    'endpoints',
+    'modulos',
+    'arquitectura',
+    'tecnologias',
+    'stack',
+    'funcionalidades',
+    'como esta hecho',
+    'mapa del sistema',
+  ]);
+}
+
+function buildProjectKnowledgeResponse(
+  role: ChatbotRole,
+  channel: ChatbotChannel
+): ChatbotResponse {
+  return {
+    asistente: ASSISTANT_NAME,
+    categoria: 'Conocimiento del proyecto',
+    titulo: 'Mapa funcional SMART RH',
+    intent: 'conocimiento_proyecto',
+    confianza: 'alta',
+    respuesta:
+      channel === 'mobile'
+        ? 'Tengo cargado el contexto funcional de SMART RH y estoy tomando en cuenta que consultas desde la app movil. Puedo orientarte por modulo, ruta, rol o flujo operativo.'
+        : 'Tengo cargado el contexto funcional de SMART RH y estoy tomando en cuenta que consultas desde el portal web. Puedo orientarte por modulo, ruta, rol o flujo operativo.',
+    pasos: PROJECT_KNOWLEDGE_LINES,
+    preguntas_seguimiento: [
+      'Quieres el flujo de un modulo especifico?',
+      'Quieres que revise una ruta o endpoint concreto?',
+      'Quieres consultar informacion de un empleado?',
+    ],
+    acciones: [],
+    sugerencias: [
+      'Usuarios',
+      'Asistencia',
+      'Incapacidades',
+      'Empleado',
+    ],
+    requiere_escalamiento: false,
+    puede_crear_ticket: false,
+  };
+}
+
+function isEmployeeDataIntent(message: string) {
+  const asksData =
+    /informacion|datos|perfil|resumen|detalle|estatus|estado|expediente|contrato|nomina|vacaciones|asistencia|incapacidad|incapacidades|permisos/.test(message);
+  const mentionsEmployee =
+    /empleado|colaborador|trabajador|usuario|persona|admin|administrador|correo|id\s*\d+/.test(message);
+
+  return asksData && mentionsEmployee;
+}
+
+function extractEmployeeLookup(rawMessage: string): EmployeeLookup | null {
+  const normalized = compactText(rawMessage);
+  const email = normalized.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)?.[0];
+  if (email) return { correo: email };
+
+  const idMatch = normalized.match(/(?:empleado|usuario|colaborador|trabajador|id)\s*#?\s*(\d+)/i);
+  if (idMatch) return { id: Number(idMatch[1]) };
+
+  const nameMatch = normalized.match(
+    /(?:empleado|colaborador|trabajador|usuario|persona|admin|administrador)\s+([a-z0-9ñ\s.'-]{3,80})/i
+  );
+
+  if (nameMatch) {
+    const nombre = nameMatch[1]
+      .replace(/\b(informacion|datos|perfil|resumen|detalle|estatus|estado|contrato|nomina|vacaciones|asistencia|incapacidades?)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (nombre.length >= 3) return { nombre };
+  }
+
+  return null;
+}
+
+function safeText(value: unknown, fallback = 'No registrado') {
+  const text = String(value ?? '').trim();
+  return text || fallback;
+}
+
+function formatDate(value: unknown) {
+  if (!value) return 'No registrado';
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toISOString().slice(0, 10);
+}
+
+function formatMoney(value: unknown) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 'No registrado';
+  return number.toLocaleString('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+  });
+}
+
+async function findEmployeeCandidates(
+  lookup: EmployeeLookup,
+  role: ChatbotRole,
+  actorUserId: number
+) {
+  const params: unknown[] = [];
+  let where = '';
+
+  if (role !== 'admin') {
+    where = 'u.id = ?';
+    params.push(actorUserId);
+  } else if (lookup.id) {
+    where = 'u.id = ?';
+    params.push(lookup.id);
+  } else if (lookup.correo) {
+    where = 'LOWER(u.correo) = ?';
+    params.push(lookup.correo.toLowerCase());
+  } else if (lookup.nombre) {
+    where = "LOWER(CONCAT_WS(' ', u.nombre, u.apellido, u.correo)) LIKE ?";
+    params.push(`%${lookup.nombre.toLowerCase()}%`);
+  } else {
+    where = 'u.id = ?';
+    params.push(actorUserId);
+  }
+
+  const [rows] = await pool.query(
+    `SELECT
+       u.id,
+       u.nombre,
+       u.apellido,
+       u.correo,
+       u.telefono,
+       u.direccion,
+       u.fecha_ingreso,
+       u.dias_vacaciones_disponibles,
+       u.activo,
+       u.created_at,
+       u.updated_at,
+       u.foto_perfil_url,
+       u.credencial_url,
+       r.nombre AS role
+     FROM usuarios u
+     JOIN roles r ON r.id = u.rol_id
+     WHERE ${where}
+     ORDER BY u.id DESC
+     LIMIT 5`,
+    params
+  );
+
+  return rows as any[];
+}
+
+async function getEmployeeOperationalData(userId: number) {
+  const [permisos] = await pool.query(
+    `SELECT modulo, habilitado
+     FROM usuario_modulos
+     WHERE usuario_id = ?
+     ORDER BY modulo ASC`,
+    [userId]
+  );
+
+  const [contratos] = await pool.query(
+    `SELECT id, tipo_contrato, salario_base, fecha_inicio, fecha_fin, estado, contrato_pdf_url
+     FROM contratos
+     WHERE usuario_id = ?
+     ORDER BY (estado = 'activo') DESC, id DESC
+     LIMIT 2`,
+    [userId]
+  );
+
+  const [nominas] = await pool.query(
+    `SELECT id, salario_base, deducciones, bonos, total, estado, periodo_inicio, periodo_fin
+     FROM nominas
+     WHERE usuario_id = ?
+     ORDER BY periodo_fin DESC, id DESC
+     LIMIT 3`,
+    [userId]
+  );
+
+  const [vacaciones] = await pool.query(
+    `SELECT id, dias_disponibles, dias_solicitados, fecha_inicio, fecha_fin, estado
+     FROM vacaciones
+     WHERE usuario_id = ?
+     ORDER BY id DESC
+     LIMIT 3`,
+    [userId]
+  );
+
+  const [asistencias] = await pool.query(
+    `SELECT id, fecha, hora_entrada, hora_salida, estado, duracion_registrada_segundos
+     FROM asistencias
+     WHERE usuario_id = ?
+     ORDER BY fecha DESC, id DESC
+     LIMIT 5`,
+    [userId]
+  );
+
+  const [incapacidades] = await pool.query(
+    `SELECT id, fecha_inicio, fecha_fin, dias_calculados, motivo, estado, observaciones_admin, created_at
+     FROM incapacidades
+     WHERE usuario_id = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT 3`,
+    [userId]
+  );
+
+  return {
+    permisos: permisos as any[],
+    contratos: contratos as any[],
+    nominas: nominas as any[],
+    vacaciones: vacaciones as any[],
+    asistencias: asistencias as any[],
+    incapacidades: incapacidades as any[],
+  };
+}
+
+function buildAmbiguousEmployeeResponse(
+  role: ChatbotRole,
+  candidates: any[],
+  channel: ChatbotChannel
+): ChatbotResponse {
+  return {
+    asistente: ASSISTANT_NAME,
+    categoria: 'Datos de empleado',
+    titulo: 'Seleccion de empleado',
+    intent: 'seleccion_empleado',
+    confianza: 'media',
+    respuesta:
+      channel === 'mobile'
+        ? 'Encontre mas de una coincidencia. Para darte datos exactos desde la app movil, dime el ID o correo del empleado.'
+        : 'Encontre mas de una coincidencia. Para darte datos exactos desde el portal web, dime el ID o correo del empleado.',
+    pasos: candidates.map((user) =>
+      `ID ${user.id}: ${safeText(user.nombre)} ${safeText(user.apellido, '')} · ${safeText(user.correo)} · rol ${safeText(user.role)}`
+    ),
+    preguntas_seguimiento: [
+      'Cual ID o correo quieres consultar?',
+      'Quieres ver perfil general, contrato, asistencia o vacaciones?',
+    ],
+    acciones: [],
+    sugerencias: getSuggestions(role),
+    requiere_escalamiento: false,
+    puede_crear_ticket: false,
+  };
+}
+
+function buildEmployeeResponse(
+  role: ChatbotRole,
+  channel: ChatbotChannel,
+  user: any,
+  data: {
+    permisos: any[];
+    contratos: any[];
+    nominas: any[];
+    vacaciones: any[];
+    asistencias: any[];
+    incapacidades: any[];
+  }
+): ChatbotResponse {
+  const nombreCompleto = `${safeText(user.nombre)} ${safeText(user.apellido, '')}`.trim();
+  const contrato = data.contratos[0];
+  const nomina = data.nominas[0];
+  const permisosActivos = data.permisos
+    .filter((item) => Number(item.habilitado) === 1)
+    .map((item) => item.modulo);
+  const permisosInactivos = data.permisos
+    .filter((item) => Number(item.habilitado) !== 1)
+    .map((item) => item.modulo);
+
+  const pasos = [
+    `Empleado: ${nombreCompleto} · ID ${user.id} · correo ${safeText(user.correo)}.`,
+    `Rol: ${safeText(user.role)} · estado: ${Number(user.activo) === 1 ? 'activo' : 'inactivo'} · ingreso: ${formatDate(user.fecha_ingreso)}.`,
+    `Contacto: telefono ${safeText(user.telefono)} · direccion ${safeText(user.direccion)}.`,
+    `Vacaciones disponibles: ${Number(user.dias_vacaciones_disponibles ?? 0)} dia(s).`,
+    contrato
+      ? `Contrato: ${safeText(contrato.tipo_contrato)} · estado ${safeText(contrato.estado)} · salario ${formatMoney(contrato.salario_base)} · vigencia ${formatDate(contrato.fecha_inicio)} a ${formatDate(contrato.fecha_fin)}.`
+      : 'Contrato: no hay contrato registrado.',
+    nomina
+      ? `Ultima nomina: periodo ${formatDate(nomina.periodo_inicio)} a ${formatDate(nomina.periodo_fin)} · estado ${safeText(nomina.estado)} · total ${formatMoney(nomina.total)}.`
+      : 'Nomina: no hay registros recientes.',
+    permisosActivos.length
+      ? `Modulos activos: ${permisosActivos.join(', ')}.`
+      : 'Modulos activos: no hay permisos activos registrados.',
+    permisosInactivos.length
+      ? `Modulos desactivados: ${permisosInactivos.join(', ')}.`
+      : 'Modulos desactivados: sin bloqueos registrados por modulo.',
+  ];
+
+  if (data.vacaciones.length) {
+    pasos.push(
+      `Vacaciones recientes: ${data.vacaciones
+        .map((item) => `#${item.id} ${safeText(item.estado)} ${formatDate(item.fecha_inicio)}-${formatDate(item.fecha_fin)} (${item.dias_solicitados} dia(s))`)
+        .join(' | ')}.`
+    );
+  }
+
+  if (data.asistencias.length) {
+    pasos.push(
+      `Asistencia reciente: ${data.asistencias
+        .map((item) => `${formatDate(item.fecha)} ${safeText(item.estado)} entrada ${safeText(item.hora_entrada, 'N/A')} salida ${safeText(item.hora_salida, 'N/A')}`)
+        .join(' | ')}.`
+    );
+  }
+
+  if (data.incapacidades.length) {
+    pasos.push(
+      `Incapacidades recientes: ${data.incapacidades
+        .map((item) => `#${item.id} ${safeText(item.estado)} ${formatDate(item.fecha_inicio)}-${formatDate(item.fecha_fin)} (${item.dias_calculados} dia(s))`)
+        .join(' | ')}.`
+    );
+  }
+
+  return {
+    asistente: ASSISTANT_NAME,
+    categoria: 'Datos de empleado',
+    titulo: `Resumen de ${nombreCompleto}`,
+    intent: 'consulta_empleado',
+    confianza: 'alta',
+    respuesta:
+      channel === 'mobile'
+        ? `Encontre el expediente de ${nombreCompleto}. Te doy el resumen permitido para tu sesion desde la app movil.`
+        : `Encontre el expediente de ${nombreCompleto}. Te doy el resumen permitido para tu sesion desde el portal web.`,
+    pasos,
+    preguntas_seguimiento: [
+      'Quieres revisar solo contrato, nomina, vacaciones, asistencia o incapacidades?',
+      role === 'admin'
+        ? 'Quieres abrir Usuarios y permisos para ajustar rol o modulos?'
+        : 'Quieres que revise algun dato de tu propio perfil?',
+    ],
+    acciones:
+      role === 'admin'
+        ? [
+            {
+              label: 'Usuarios en portal',
+              target: '/portal/usuarios',
+              scope: 'web',
+            },
+            {
+              label: 'Usuarios y permisos',
+              target: 'AdminUsuarios',
+              scope: 'mobile',
+            },
+          ]
+        : [],
+    sugerencias: [
+      'Contrato',
+      'Nomina',
+      'Vacaciones',
+      'Asistencia',
+    ],
+    requiere_escalamiento: false,
+    puede_crear_ticket: false,
+  };
+}
+
+async function buildEmployeeDataResponse(
+  data: ChatbotRuntimeRequest,
+  role: ChatbotRole,
+  channel: ChatbotChannel,
+  messageWithContext: string
+): Promise<ChatbotResponse | null> {
+  if (!isEmployeeDataIntent(messageWithContext)) {
+    return null;
+  }
+
+  const actorUserId = Number(data.usuarioId);
+  if (!Number.isInteger(actorUserId) || actorUserId <= 0) {
+    return null;
+  }
+
+  const lookup = extractEmployeeLookup(messageWithContext) || {};
+  const candidates = await findEmployeeCandidates(lookup, role, actorUserId);
+
+  if (candidates.length === 0) {
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Datos de empleado',
+      titulo: 'Empleado no encontrado',
+      intent: 'consulta_empleado_sin_resultado',
+      confianza: 'media',
+      respuesta:
+        'No encontre un empleado con ese dato. Para buscarlo necesito ID, correo o nombre completo tal como esta registrado.',
+      pasos: [
+        'Intenta con el correo institucional del empleado.',
+        'O usa el ID del usuario si lo tienes disponible.',
+        'Si estas buscando a otra persona y no eres admin, Max no puede mostrar datos de terceros.',
+      ],
+      preguntas_seguimiento: [
+        'Cual es el correo o ID del empleado?',
+      ],
+      acciones: [],
+      sugerencias: getSuggestions(role),
+      requiere_escalamiento: false,
+      puede_crear_ticket: false,
+    };
+  }
+
+  if (candidates.length > 1) {
+    return buildAmbiguousEmployeeResponse(role, candidates, channel);
+  }
+
+  const [user] = candidates;
+  const operationalData = await getEmployeeOperationalData(Number(user.id));
+
+  return buildEmployeeResponse(role, channel, user, operationalData);
+}
+
 export function obtenerSugerenciasChatbot(role?: string | null) {
   const normalizedRole = normalizeRole(role);
   return getSuggestions(normalizedRole);
@@ -886,10 +1366,15 @@ export function responderChatbot(data: {
     canUseEntry(entry, role)
   );
 
+  const directEntryId = resolveDirectEntryId(messageWithContext);
+
   const ranked = entries
     .map((entry) => ({
       entry,
-      score: scoreEntry(entry, mensaje) * 2 + scoreEntry(entry, messageWithContext),
+      score:
+        scoreEntry(entry, mensaje) * 2 +
+        scoreEntry(entry, messageWithContext) +
+        (entry.id === directEntryId ? 120 : 0),
     }))
     .sort((a, b) => b.score - a.score);
 
@@ -916,11 +1401,44 @@ export function responderChatbot(data: {
     ),
     acciones: best.entry.acciones,
     sugerencias: best.entry.preguntas_seguimiento.length
-      ? best.entry.preguntas_seguimiento
+      ? adaptFollowUpQuestions(best.entry.preguntas_seguimiento, channel)
       : getSuggestions(role),
     requiere_escalamiento: confidence === 'baja',
-    puede_crear_ticket: true,
+    puede_crear_ticket: confidence === 'baja' || best.entry.id === 'soporte',
   };
+}
+
+export async function responderChatbotConDatos(
+  data: ChatbotRuntimeRequest
+): Promise<ChatbotResponse> {
+  const role = normalizeRole(data.role);
+  const channel = normalizeChannel(data.canal);
+  const rawMessage = String(data.mensaje || '').trim();
+  const messageWithContext = buildContextMessage(
+    rawMessage,
+    data.historial
+  );
+
+  if (!rawMessage) {
+    throw new AppError('El mensaje es obligatorio', 400);
+  }
+
+  if (isProjectKnowledgeIntent(messageWithContext)) {
+    return buildProjectKnowledgeResponse(role, channel);
+  }
+
+  const employeeDataResponse = await buildEmployeeDataResponse(
+    data,
+    role,
+    channel,
+    messageWithContext
+  );
+
+  if (employeeDataResponse) {
+    return employeeDataResponse;
+  }
+
+  return responderChatbot(data);
 }
 
 export async function crearTicketDesdeChatbot(data: {

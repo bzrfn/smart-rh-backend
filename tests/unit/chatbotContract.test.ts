@@ -161,4 +161,37 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(response.puede_crear_ticket).toBe(true);
   });
 
+
+  it('conecta Max con conocimiento del proyecto y datos vivos con control de rol', () => {
+    const service = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'src/modules/chatbot/chatbot.service.ts'
+      ),
+      'utf8'
+    );
+
+    const controller = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'src/modules/chatbot/chatbot.controller.ts'
+      ),
+      'utf8'
+    );
+
+    expect(service).toMatch(/PROJECT_KNOWLEDGE_LINES/);
+    expect(service).toMatch(/findEmployeeCandidates/);
+    expect(service).toMatch(/getEmployeeOperationalData/);
+    expect(service).toMatch(/contratos/);
+    expect(service).toMatch(/nominas/);
+    expect(service).toMatch(/vacaciones/);
+    expect(service).toMatch(/asistencias/);
+    expect(service).toMatch(/incapacidades/);
+    expect(service).toMatch(/role !== 'admin'/);
+    expect(service).not.toMatch(/u\.contrasena|password_hash|contrasena_hash/);
+    expect(service).not.toMatch(/SELECT[\s\S]{0,500}qr_token[\s\S]{0,500}FROM asistencias/);
+    expect(controller).toMatch(/await responderChatbotConDatos/);
+    expect(controller).toMatch(/usuarioId: auth\.usuarioId/);
+  });
+
 });

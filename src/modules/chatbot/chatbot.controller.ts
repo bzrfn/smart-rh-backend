@@ -7,7 +7,7 @@ import { AppError } from '../../utils/AppError.js';
 import {
   crearTicketDesdeChatbot,
   obtenerSugerenciasChatbot,
-  responderChatbot,
+  responderChatbotConDatos,
 } from './chatbot.service.js';
 
 function requireAuth(req: AuthRequest) {
@@ -76,11 +76,12 @@ export async function responderChatbotController(
     const auth = requireAuth(req);
     const mensaje = String(req.body?.mensaje || '').trim();
 
-    const respuesta = responderChatbot({
+    const respuesta = await responderChatbotConDatos({
       role: auth.role,
       mensaje,
       historial: normalizeHistory(req.body),
       canal: normalizeChannel(req.body),
+      usuarioId: auth.usuarioId,
     });
 
     let ticket = null;
