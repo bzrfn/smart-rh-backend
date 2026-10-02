@@ -451,12 +451,12 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'seguimiento',
     ],
     respuesta:
-      'Si el caso no se puede resolver con pasos operativos, Max puede crear un ticket con el contexto de la conversacion para que soporte o administracion lo revise.',
+      'Primero revisamos el caso con pasos concretos. Si despues de intentar el diagnostico no queda resuelto, Max puede crear un ticket con el contexto de la conversacion para que soporte o administracion lo revise.',
     pasos: [
       'Describe que estabas intentando hacer.',
       'Indica si ocurrio en portal o app movil.',
       'Agrega el mensaje exacto de error si existe.',
-      'Crea el ticket para dejar evidencia y seguimiento.',
+      'Si no se resuelve con el diagnostico, crea el ticket para dejar evidencia y seguimiento.',
     ],
     preguntas_seguimiento: [
       'Quieres que cree un ticket con esta conversacion?',
@@ -611,7 +611,8 @@ function confidenceFromScore(score: number): ChatbotResponse['confianza'] {
 
 function buildConversationResponse(
   role: ChatbotRole,
-  message: string
+  message: string,
+  channel: ChatbotChannel
 ): ChatbotResponse | null {
   if (hasAny(message, THANKS_WORDS)) {
     return {
@@ -621,11 +622,13 @@ function buildConversationResponse(
       intent: 'agradecimiento',
       confianza: 'alta',
       respuesta:
-        'Con gusto. Me quedo atento por si quieres revisar otra duda o dejar el caso documentado en un ticket.',
+        'Con gusto. Me quedo contigo por si quieres revisar otro punto. Si algo no queda claro, seguimos desde lo que ya me contaste para no empezar de cero.',
       pasos: [],
       preguntas_seguimiento: [
         'Quieres revisar otro tema?',
-        'Quieres crear un ticket con esta conversacion?',
+        channel === 'mobile'
+          ? 'Seguimos con algo de la app movil?'
+          : 'Seguimos con algo del portal web?',
       ],
       acciones: [
         {
@@ -648,11 +651,13 @@ function buildConversationResponse(
       intent: 'aprendizaje_contextual',
       confianza: 'alta',
       respuesta:
-        'Puedo usar el contexto reciente de esta conversacion para responder con mas precision dentro de SMART RH. Si me describes que intentabas hacer, que pantalla viste y que resultado esperabas, ajusto la respuesta al caso en lugar de mandarte directo a un modulo.',
+        'Si. Max usa el contexto reciente de la conversacion para no tratar cada mensaje como si fuera el primero. Cuando me cuentas que intentabas hacer, que pantalla viste y que esperabas que pasara, puedo ordenar el problema, descartar causas probables y darte el siguiente paso mas util antes de pensar en un ticket.',
       pasos: [],
       preguntas_seguimiento: [
         'Que intentabas hacer exactamente?',
-        'En que pantalla estabas?',
+        channel === 'mobile'
+          ? 'En que pantalla de la app estabas?'
+          : 'En que pantalla del portal estabas?',
         'Que resultado esperabas ver?',
       ],
       acciones: [],
@@ -668,6 +673,11 @@ function buildConversationResponse(
     !hasAny(message, DOMAIN_WORDS);
 
   if (looksLikeGreeting) {
+    const channelQuestion =
+      channel === 'mobile'
+        ? 'En que pantalla de la app estas?'
+        : 'En que pantalla del portal estas?';
+
     return {
       asistente: ASSISTANT_NAME,
       categoria: 'Conversacion',
@@ -675,11 +685,13 @@ function buildConversationResponse(
       intent: 'saludo',
       confianza: 'alta',
       respuesta:
-        'Hola, soy Max. Estoy aqui para ayudarte con SMART RH de forma sencilla: puedes contarme que paso, que intentabas hacer o que viste en pantalla, y lo revisamos juntos paso a paso.',
+        channel === 'mobile'
+          ? 'Hola, soy Max. Estoy contigo desde la app movil. Escribeme el problema como te salga: que intentabas hacer, que viste en pantalla o que se sintio raro. Yo lo ordeno y lo revisamos paso a paso.'
+          : 'Hola, soy Max. Estoy contigo en el portal web. Escribeme el problema como te salga: que intentabas hacer, que viste en pantalla o que se sintio raro. Yo lo ordeno y lo revisamos paso a paso.',
       pasos: [],
       preguntas_seguimiento: [
         'Que quieres resolver ahora?',
-        'Estas en portal o en app movil?',
+        channelQuestion,
         'Te aparece algun mensaje de error?',
       ],
       acciones: [],
@@ -699,13 +711,13 @@ function buildNaturalAnswer(
   channel: ChatbotChannel
 ) {
   const intro = isProblem
-    ? 'Te entiendo. Vamos a revisarlo por partes.'
-    : 'Va, lo revisamos.';
+    ? 'Te entiendo. Vamos por partes y sin brincar directo a soporte.'
+    : 'Va, lo revisamos con calma.';
 
   const closing =
     confidence === 'baja'
-      ? ' Si me das la pantalla exacta y el mensaje que viste, puedo afinar el diagnostico.'
-      : ' Si quieres, dime que viste en pantalla y lo aterrizamos al caso exacto.';
+      ? ' Dame la pantalla exacta y el mensaje que viste para afinar el diagnostico; si despues de eso no queda, dejamos un ticket bien armado.'
+      : ' Dime que viste en pantalla y lo aterrizamos al caso exacto antes de pensar en ticket.';
 
   const channelContext =
     channel === 'mobile'
@@ -833,7 +845,7 @@ export function responderChatbot(data: {
     throw new AppError('El mensaje es obligatorio', 400);
   }
 
-  const conversational = buildConversationResponse(role, mensaje);
+  const conversational = buildConversationResponse(role, mensaje, channel);
   if (conversational) {
     return conversational;
   }

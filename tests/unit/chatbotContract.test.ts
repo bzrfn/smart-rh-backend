@@ -80,6 +80,18 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(response.preguntas_seguimiento.length).toBeGreaterThan(0);
   });
 
+  it('saluda con contexto de app movil sin preguntar el canal', () => {
+    const response = responderChatbot({
+      role: 'empleado',
+      canal: 'mobile',
+      mensaje: 'hola max',
+    });
+
+    expect(response.intent).toBe('saludo');
+    expect(response.respuesta).toMatch(/app movil/i);
+    expect(response.preguntas_seguimiento.join(' ')).not.toMatch(/portal o app movil/i);
+  });
+
   it('diagnostica problemas de acceso sin limitarse a mandar al modulo', () => {
     const response = responderChatbot({
       role: 'empleado',
@@ -122,4 +134,16 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(response.respuesta).toMatch(/app movil/i);
     expect(response.pasos.join(' ')).not.toMatch(/portal o app movil/i);
   });
+  it('deja el ticket como ultima salida cuando falta contexto', () => {
+    const response = responderChatbot({
+      role: 'empleado',
+      canal: 'mobile',
+      mensaje: 'algo se siente raro y no se que hacer',
+    });
+
+    expect(response.confianza).toBe('baja');
+    expect(response.respuesta).toMatch(/Primero lo resolvemos|despues no queda solucionado/i);
+    expect(response.puede_crear_ticket).toBe(true);
+  });
+
 });
