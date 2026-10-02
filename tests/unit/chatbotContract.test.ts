@@ -104,6 +104,21 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(response.pasos.join(' ')).toMatch(/api|correo|backend/i);
   });
 
+  it('orienta a un admin para invitar un nuevo administrador', () => {
+    const response = responderChatbot({
+      role: 'admin',
+      canal: 'web',
+      mensaje: 'necesito agregar y mandar invitacion a un nuevo administrador',
+    });
+
+    expect(response.categoria).toBe('Usuarios y permisos');
+    expect(response.intent).toBe('orientacion');
+    expect(response.respuesta).toMatch(/Usuarios y permisos/i);
+    expect(response.respuesta).toMatch(/rol admin/i);
+    expect(response.pasos.join(' ')).toMatch(/correo|invitacion|CRUD/i);
+    expect(response.acciones.some((action) => action.target === '/portal/usuarios')).toBe(true);
+  });
+
   it('mantiene sugerencias compactas para el widget flotante', () => {
     const suggestions = obtenerSugerenciasChatbot('empleado');
 
