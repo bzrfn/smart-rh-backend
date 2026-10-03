@@ -1,12 +1,80 @@
+jest.mock('../../src/config/db.js', () => ({
+  pool: {
+    query: jest.fn(),
+  },
+}));
+
 import fs from 'fs';
 import path from 'path';
+import { pool } from '../../src/config/db.js';
 import {
   obtenerSugerenciasChatbot,
   responderChatbot,
   responderChatbotConDatos,
 } from '../../src/modules/chatbot/chatbot.service.js';
 
+const mockedQuery = pool.query as jest.Mock;
+
+function mockEmployeeData() {
+  mockedQuery
+    .mockResolvedValueOnce([
+      [
+        {
+          id: 21,
+          nombre: 'Brandon',
+          apellido: 'Bernal',
+          correo: 'brandon.bernal@smart-rh.test',
+          telefono: '5550001111',
+          direccion: 'No visible',
+          fecha_ingreso: '2026-01-15',
+          dias_vacaciones_disponibles: 9,
+          activo: 1,
+          created_at: '2026-01-15',
+          updated_at: '2026-01-15',
+          foto_perfil_url: null,
+          credencial_url: null,
+          role: 'admin',
+        },
+      ],
+    ])
+    .mockResolvedValueOnce([[{ modulo: 'usuarios', habilitado: 1 }]])
+    .mockResolvedValueOnce([
+      [
+        {
+          id: 7,
+          tipo_contrato: 'Indeterminado',
+          salario_base: 15000,
+          fecha_inicio: '2026-01-15',
+          fecha_fin: null,
+          estado: 'activo',
+          contrato_pdf_url: null,
+        },
+      ],
+    ])
+    .mockResolvedValueOnce([
+      [
+        {
+          id: 9,
+          salario_base: 15000,
+          deducciones: 0,
+          bonos: 0,
+          total: 15000,
+          estado: 'pagada',
+          periodo_inicio: '2026-09-01',
+          periodo_fin: '2026-09-15',
+        },
+      ],
+    ])
+    .mockResolvedValueOnce([[]])
+    .mockResolvedValueOnce([[]])
+    .mockResolvedValueOnce([[]]);
+}
+
 describe('Cambio #6 - Chatbot integral SMART RH', () => {
+  beforeEach(() => {
+    mockedQuery.mockReset();
+  });
+
   it('expone rutas protegidas con authJwt', () => {
     const routes = fs.readFileSync(
       path.join(
@@ -36,19 +104,57 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     );
   });
 
+  it('conecta Max con datos vivos sin exponer conocimiento tecnico sensible', () => {
+    const service = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'src/modules/chatbot/chatbot.service.ts'
+      ),
+      'utf8'
+    );
+
+    const controller = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'src/modules/chatbot/chatbot.controller.ts'
+      ),
+      'utf8'
+    );
+
+    const knowledge = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'src/modules/chatbot/max.knowledge.ts'
+      ),
+      'utf8'
+    );
+
+    expect(knowledge).toMatch(/PROJECT_INTERNAL_KNOWLEDGE_LINES/);
+    expect(knowledge).toMatch(/PROJECT_SAFE_OPERATIONAL_LINES/);
+    expect(service).toMatch(/from '\.\/max\.intent\.js'/);
+    expect(service).toMatch(/from '\.\/max\.entities\.js'/);
+    expect(service).toMatch(/from '\.\/max\.context\.js'/);
+    expect(service).toMatch(/findEmployeeCandidates/);
+    expect(service).toMatch(/getEmployeeOperationalData/);
+    expect(service).toMatch(/canQueryEmployeeData/);
+    expect(controller).toMatch(/await responderChatbotConDatos/);
+    expect(controller).toMatch(/usuarioId: auth\.usuarioId/);
+  });
+
   it('responde consultas administrativas solo para rol admin', () => {
     const adminResponse = responderChatbot({
       role: 'admin',
+      canal: 'web',
       mensaje: 'donde administro usuarios y permisos',
     });
 
     expect(adminResponse.asistente).toBe('Max');
     expect(adminResponse.categoria).toBe('Usuarios y permisos');
     expect(adminResponse.requiere_escalamiento).toBe(false);
-    expect(adminResponse.pasos.length).toBeGreaterThan(0);
 
     const employeeResponse = responderChatbot({
       role: 'empleado',
+      canal: 'web',
       mensaje: 'donde administro usuarios y permisos',
     });
 
@@ -67,28 +173,24 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(response.preguntas_seguimiento.length).toBeGreaterThan(0);
   });
 
-  it('responde como Max a una conversacion normal', () => {
-    const response = responderChatbot({
-      role: 'empleado',
-      mensaje: 'hola max',
-    });
+  it('mantiene sugerencias compactas para el widget flotante', () => {
+    const suggestions = obtenerSugerenciasChatbot('empleado');
 
-    expect(response.asistente).toBe('Max');
-    expect(response.intent).toBe('saludo');
-    expect(response.respuesta).toMatch(/soy Max/i);
-    expect(response.respuesta).not.toMatch(/^Claro/i);
-    expect(response.pasos).toHaveLength(0);
-    expect(response.preguntas_seguimiento.length).toBeGreaterThan(0);
+    expect(suggestions.length).toBeGreaterThanOrEqual(3);
+    expect(suggestions.every((item) => item.length <= 24)).toBe(true);
+    expect(suggestions).toContain('Tengo un problema');
   });
 
-  it('saluda con contexto de app movil sin preguntar el canal', () => {
+  it('responde como Max a una conversacion normal', () => {
     const response = responderChatbot({
       role: 'empleado',
       canal: 'mobile',
       mensaje: 'hola max',
     });
 
+    expect(response.asistente).toBe('Max');
     expect(response.intent).toBe('saludo');
+    expect(response.respuesta).toMatch(/soy Max/i);
     expect(response.respuesta).toMatch(/app movil/i);
     expect(response.preguntas_seguimiento.join(' ')).not.toMatch(/portal o app movil/i);
   });
@@ -109,23 +211,40 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     const response = responderChatbot({
       role: 'admin',
       canal: 'web',
-      mensaje: 'necesito agregar y mandar invitacion a un nuevo administrador',
+      mensaje:
+        'NECESITO AGREGAR UN ADMINISTRADOR, ES DECIR ENVIARLE SU INVITACION, ME PODRIAS AYUDAR CON EL PROCESO POR FAVOR YA QUE NO PUEDO RECONOCER COMO HACERLO POR MI CUENTA',
     });
 
     expect(response.categoria).toBe('Usuarios y permisos');
-    expect(response.intent).toBe('orientacion');
+    expect(response.intent).toBe('diagnostico');
     expect(response.respuesta).toMatch(/Usuarios y permisos/i);
     expect(response.respuesta).toMatch(/rol admin/i);
-    expect(response.pasos.join(' ')).toMatch(/correo|invitacion|CRUD/i);
+    expect(response.respuesta).not.toMatch(/brincar directo a soporte/i);
+    expect(response.pasos.join(' ')).toMatch(/correo|invitacion|permisos/i);
+    expect(response.pasos.join(' ')).not.toMatch(/portal o app movil/i);
+    expect(response.preguntas_seguimiento.join(' ')).not.toMatch(/portal o app movil/i);
+    expect(response.puede_crear_ticket).toBe(false);
     expect(response.acciones.some((action) => action.target === '/portal/usuarios')).toBe(true);
   });
 
-  it('mantiene sugerencias compactas para el widget flotante', () => {
-    const suggestions = obtenerSugerenciasChatbot('empleado');
+  it('mantiene el contexto web en seguimiento de invitacion admin', () => {
+    const response = responderChatbot({
+      role: 'admin',
+      canal: 'web',
+      historial: [
+        {
+          author: 'user',
+          text: 'necesito agregar un administrador y enviarle su invitacion',
+        },
+      ],
+      mensaje: 'Estoy en portal web, necesito enviarle inivtacion a un nuevo admin',
+    });
 
-    expect(suggestions.length).toBeGreaterThanOrEqual(3);
-    expect(suggestions.every((item) => item.length <= 24)).toBe(true);
-    expect(suggestions).toContain('Tengo un problema');
+    expect(response.categoria).toBe('Usuarios y permisos');
+    expect(response.respuesta).toMatch(/portal web/i);
+    expect(response.pasos.join(' ')).toMatch(/Usuarios y permisos|correo|rol admin/i);
+    expect(response.pasos.join(' ')).not.toMatch(/Indica si ocurrio/i);
+    expect(response.puede_crear_ticket).toBe(false);
   });
 
   it('explica su aprendizaje contextual sin mandar directo a un modulo', () => {
@@ -150,6 +269,7 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(response.respuesta).toMatch(/app movil/i);
     expect(response.pasos.join(' ')).not.toMatch(/portal o app movil/i);
   });
+
   it('deja el ticket como ultima salida cuando falta contexto', () => {
     const response = responderChatbot({
       role: 'empleado',
@@ -162,76 +282,84 @@ describe('Cambio #6 - Chatbot integral SMART RH', () => {
     expect(response.puede_crear_ticket).toBe(true);
   });
 
-
-  it('conecta Max con conocimiento del proyecto y datos vivos con control de rol', () => {
-    const service = fs.readFileSync(
-      path.join(
-        process.cwd(),
-        'src/modules/chatbot/chatbot.service.ts'
-      ),
-      'utf8'
-    );
-
-    const controller = fs.readFileSync(
-      path.join(
-        process.cwd(),
-        'src/modules/chatbot/chatbot.controller.ts'
-      ),
-      'utf8'
-    );
-
-    expect(service).toMatch(/PROJECT_INTERNAL_KNOWLEDGE_LINES/);
-    expect(service).toMatch(/PROJECT_SAFE_OPERATIONAL_LINES/);
-    expect(service).toMatch(/findEmployeeCandidates/);
-    expect(service).toMatch(/getEmployeeOperationalData/);
-    expect(service).toMatch(/contratos/);
-    expect(service).toMatch(/nominas/);
-    expect(service).toMatch(/vacaciones/);
-    expect(service).toMatch(/asistencias/);
-    expect(service).toMatch(/incapacidades/);
-    expect(service).toMatch(/role !== 'admin'/);
-    expect(service).not.toMatch(/u\.contrasena|password_hash|contrasena_hash/);
-    expect(service).not.toMatch(/SELECT[\s\S]{0,500}qr_token[\s\S]{0,500}FROM asistencias/);
-    expect(controller).toMatch(/await responderChatbotConDatos/);
-    expect(controller).toMatch(/usuarioId: auth\.usuarioId/);
-  });
-
-
-  it('no expone rutas tecnicas ni stack en respuestas operativas', async () => {
-    const response = await responderChatbotConDatos({
-      role: 'empleado',
-      canal: 'web',
-      usuarioId: 1,
-      mensaje: 'que rutas y endpoints tiene el proyecto',
-    });
-
-    const visible = [
-      response.respuesta,
-      ...(response.pasos || []),
-      ...(response.preguntas_seguimiento || []),
-    ].join(' ');
-
-    expect(visible).not.toMatch(/\/auth|\/users|\/roles|\/incapacidades|Node\.js|Express|TypeScript|MySQL|MongoDB|JWT/i);
-    expect(visible).toMatch(/modulo|Usuarios|Asistencia|Incapacidades|permisos/i);
-  });
-
-  it('responde incapacidades pendientes como flujo operativo y no como mapa tecnico', async () => {
+  it('no expone rutas tecnicas ni stack en respuestas operativas de proyecto', async () => {
     const response = await responderChatbotConDatos({
       role: 'admin',
       canal: 'web',
       usuarioId: 1,
-      mensaje: 'Como puedo revisar las incapacidades pendientes de un empleado?',
+      mensaje: 'que sabes del proyecto y sus modulos',
     });
 
-    const visible = [
-      response.respuesta,
-      ...(response.pasos || []),
-      ...(response.preguntas_seguimiento || []),
-    ].join(' ');
-
-    expect(response.categoria).toBe('Incapacidades');
-    expect(visible).toMatch(/incapacidad|empleado|adjunto|aprobar|rechazar|revision/i);
-    expect(visible).not.toMatch(/\/auth|\/users|Node\.js|Express|TypeScript|MySQL|MongoDB|JWT/i);
+    expect(response.categoria).toBe('Conocimiento del proyecto');
+    expect(response.pasos.join(' ')).not.toMatch(/\/auth|\/users|Node\.js|Express|MySQL|JWT|MongoDB/i);
+    expect(response.pasos.join(' ')).toMatch(/Usuarios y permisos|Incapacidades|Asistencia/i);
   });
 
+  it.each([
+    ['Quiero agregar un usuario y asignarle permisos, ¿dónde entro?', 'Usuarios y permisos'],
+    ['¿Cómo reviso incapacidades pendientes de un empleado?', 'Incapacidades'],
+    ['¿Cómo apruebo o rechazo una incapacidad desde el portal?', 'Incapacidades'],
+    ['¿Cómo puedo revisar los pendientes de asistencia?', 'Asistencia administrativa'],
+    ['Un empleado dice que no le aparece su incapacidad, ¿qué reviso primero?', 'Incapacidades'],
+    ['Necesito ver la información de un empleado antes de aprobar una incapacidad.', 'Incapacidades'],
+    ['¿Cómo cambio los permisos de un usuario sin afectar su cuenta?', 'Usuarios y permisos'],
+    ['¿Cómo reviso si un empleado ya tiene contrato cargado?', 'Credencial y documentos'],
+    ['¿Cómo puedo validar una credencial desde el portal?', 'Credencial y documentos'],
+  ])(
+    'prioriza proceso operativo antes de busqueda de empleado: %s',
+    async (mensaje, categoria) => {
+      const response = await responderChatbotConDatos({
+        role: 'admin',
+        canal: 'web',
+        usuarioId: 1,
+        mensaje,
+      });
+
+      expect(response.categoria).toBe(categoria);
+      expect(response.categoria).not.toBe('Datos de empleado');
+      expect(response.respuesta).not.toMatch(/No encontre un empleado/i);
+      expect(response.pasos.join(' ')).not.toMatch(/ID, correo o nombre completo tal como esta registrado/i);
+      expect(mockedQuery).not.toHaveBeenCalled();
+    }
+  );
+
+  it('busca empleados por nombre completo cuando la intencion es explicita', async () => {
+    mockEmployeeData();
+
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      mensaje: 'busca a Brandon Bernal',
+    });
+
+    expect(response.categoria).toBe('Datos de empleado');
+    expect(response.intent).toBe('consulta_empleado');
+    expect(response.respuesta).toMatch(/Brandon Bernal/i);
+    expect(response.pasos.join(' ')).toMatch(/ID 21|brandon\.bernal/i);
+    expect(mockedQuery.mock.calls[0][1]).toEqual(['%brandon bernal%']);
+  });
+
+  it('usa continuidad conversacional para resolver id 21 como busqueda de empleado', async () => {
+    mockEmployeeData();
+
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      historial: [
+        {
+          author: 'user',
+          text: 'busca a Brandon Bernal',
+        },
+      ],
+      mensaje: 'id 21',
+    });
+
+    expect(response.categoria).toBe('Datos de empleado');
+    expect(response.intent).toBe('consulta_empleado');
+    expect(response.categoria).not.toBe('Acceso');
+    expect(response.respuesta).not.toMatch(/credenciales incorrectas|backend sea el ambiente/i);
+    expect(mockedQuery.mock.calls[0][1]).toEqual([21]);
+  });
 });

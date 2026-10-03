@@ -1,11 +1,29 @@
 import {
-  ChatbotAction,
   ChatbotChannel,
   ChatbotKnowledgeEntry,
   ChatbotMessageContext,
   ChatbotResponse,
   ChatbotRole,
 } from './chatbot.types.js';
+import { buildMaxContextMessage } from './max.context.js';
+import {
+  extractEmployeeLookup,
+  isEmployeeDataIntent,
+  shouldAskEmployeeIdentifier,
+  type EmployeeLookup,
+} from './max.entities.js';
+import {
+  isOperationalFlowIntent,
+  resolveDirectEntryId,
+} from './max.intent.js';
+import {
+  PROJECT_SAFE_OPERATIONAL_LINES,
+} from './max.knowledge.js';
+import { buildEmployeeWhereClause } from './max.employee-tools.js';
+import { canQueryEmployeeData } from './max.policy.js';
+import { buildMaxResponse } from './max.response.js';
+import { filterSafeKnowledgeLines } from './max.security.js';
+import { buildMaxTicketDescription } from './max.ticket-tools.js';
 import { crearTicketSoporte } from '../soporte/soporte.service.js';
 import { AppError } from '../../utils/AppError.js';
 import { pool } from '../../config/db.js';
@@ -587,80 +605,6 @@ function buildSearchText(entry: ChatbotKnowledgeEntry) {
     .join(' ');
 }
 
-function isAdminInvitationIntent(message: string) {
-  const talksAboutAdmin =
-    /\badmin\b|administrador|administradora|administrativo|administrativa/.test(message);
-  const talksAboutInvite =
-    /invit|inivt|agreg|crear|nuevo|nueva|alta|registr|correo|mandar|enviar/.test(message);
-  const talksAboutUser =
-    /usuario|cuenta|acceso|permiso|rol|correo|admin/.test(message);
-
-  return talksAboutAdmin && talksAboutInvite && talksAboutUser;
-}
-
-function isUserPermissionsIntent(message: string) {
-  return (
-    /usuario|usuarios|cuenta|cuentas|permiso|permisos|rol|roles/.test(message) &&
-    /agreg|crear|nuevo|alta|asign|cambiar|editar|modificar|activar|desactivar|invitar|invitacion/.test(message)
-  );
-}
-
-function isIncapacityOperationalIntent(message: string) {
-  return (
-    /incapacidad|incapacidades|imss|comprobante|validacion/.test(message) &&
-    /como|donde|revis|aprobar|rechazar|pendiente|aparece|aparezca|proceso|flujo|primero|validar|adjuntar|registrar/.test(message)
-  );
-}
-
-function isAttendanceOperationalIntent(message: string) {
-  return (
-    /asistencia|asistencias|entrada|salida|pendiente|pendientes|checador|qr/.test(message) &&
-    /como|donde|revis|aprobar|rechazar|corregir|justificar|pendiente|pendientes|registro|flujo/.test(message)
-  );
-}
-
-function isCredentialOperationalIntent(message: string) {
-  return (
-    /credencial|documentos|contrato|expediente|qr/.test(message) &&
-    /como|donde|revis|validar|verificar|cargado|consultar|flujo/.test(message)
-  );
-}
-
-function resolveDirectEntryId(message: string) {
-  if (isAdminInvitationIntent(message)) {
-    return 'usuarios-admin';
-  }
-
-  if (isUserPermissionsIntent(message)) {
-    return 'usuarios-admin';
-  }
-
-  if (isIncapacityOperationalIntent(message)) {
-    return 'incapacidades';
-  }
-
-  if (isAttendanceOperationalIntent(message)) {
-    return 'asistencia-admin';
-  }
-
-  if (isCredentialOperationalIntent(message)) {
-    return 'credencial';
-  }
-
-  return null;
-}
-
-function isOperationalFlowIntent(message: string) {
-  if (resolveDirectEntryId(message)) return true;
-
-  const processCue =
-    /como|donde|paso|proceso|flujo|ayudame|que reviso|que hago|no se|no entiendo/.test(message);
-  const moduleCue =
-    /usuario|usuarios|permiso|permisos|incapacidad|incapacidades|asistencia|credencial|contrato|documentos|vacaciones|nomina/.test(message);
-
-  return processCue && moduleCue;
-}
-
 function scoreEntry(entry: ChatbotKnowledgeEntry, message: string) {
   const searchable = buildSearchText(entry);
   let score = 0;
@@ -690,20 +634,6 @@ function scoreEntry(entry: ChatbotKnowledgeEntry, message: string) {
   }
 
   return score;
-}
-
-function buildContextMessage(
-  message: string,
-  historial?: ChatbotMessageContext[]
-) {
-  const recentContext = (historial || [])
-    .slice(-4)
-    .map((item) => item.text)
-    .filter(Boolean)
-    .map(compactText)
-    .join(' ');
-
-  return compactText([recentContext, message].filter(Boolean).join(' '));
 }
 
 function confidenceFromScore(score: number): ChatbotResponse['confianza'] {
@@ -938,31 +868,8 @@ type ChatbotRuntimeRequest = {
   usuarioId?: number | null;
 };
 
-type EmployeeLookup = {
-  id?: number;
-  correo?: string;
-  nombre?: string;
-};
 
-const PROJECT_INTERNAL_KNOWLEDGE_LINES = [
-  'Backend Node.js, Express, TypeScript, MySQL, JWT y MongoDB para auditoria/notificaciones.',
-  'Portal web React, Vite y TypeScript; app movil React Native con Expo.',
-  'Rutas internas backend y modulos protegidos por JWT, rol y permisos.',
-  'Usuarios y permisos administra usuarios, roles, estado activo, modulos habilitados e invitaciones.',
-  'Asistencia incluye QR, entrada/salida, pendientes, revision administrativa, correccion, justificacion y terminal autorizada.',
-  'Incapacidades permite registro por empleado, comprobante PDF, analisis/validacion, revision admin, aprobacion, rechazo e historial.',
-  'Calendario laboral consolida asistencia, vacaciones e incapacidades por mes y dia.',
-  'Documentos maneja contrato PDF, foto de perfil y credencial digital con QR.',
-  'ETL, ML, KMeans y Analytics generan analisis y metricas administrativas.',
-  'Max usa canal web/mobile recibido en la peticion y no debe preguntar de nuevo el canal.',
-];
 
-const PROJECT_SAFE_OPERATIONAL_LINES = [
-  'Puedo orientarte por modulo visible: Usuarios y permisos, Asistencia, Incapacidades, Documentos, Vacaciones, Nomina, Calendario, Credenciales o Soporte.',
-  'Si buscas un flujo administrativo, primero confirmo tu rol y despues te explico los pasos dentro del portal o la app.',
-  'Si buscas informacion de un empleado, solo la muestro cuando tu rol lo permite y evitando datos sensibles.',
-  'No muestro identificadores internos, stack tecnico, tokens, hashes, QR privados ni detalles de infraestructura en respuestas operativas.',
-];
 
 function isProjectKnowledgeIntent(message: string) {
   return hasAny(message, [
@@ -995,8 +902,7 @@ function buildProjectKnowledgeResponse(
     'Si necesitas trazabilidad tecnica formal, conviene levantar una tarea interna con evidencias y logs controlados.',
   ];
 
-  return {
-    asistente: ASSISTANT_NAME,
+  return buildMaxResponse({
     categoria: 'Conocimiento del proyecto',
     titulo: 'Mapa funcional SMART RH',
     intent: technicalIntent ? 'diagnostico_tecnico_seguro' : 'conocimiento_operativo',
@@ -1020,128 +926,7 @@ function buildProjectKnowledgeResponse(
     ],
     requiere_escalamiento: false,
     puede_crear_ticket: false,
-  };
-}
-
-function hasEmployeeSearchVerb(message: string) {
-  return /busca|buscar|buscame|encuentra|localiza|consulta|consultar|muestra|mostrar|dame|ver/.test(message);
-}
-
-function hasEmployeeDataTerm(message: string) {
-  return /informacion|datos|perfil|resumen|detalle|estatus|estado|expediente|contrato|nomina|vacaciones|asistencia|incapacidad|incapacidades|permisos/.test(message);
-}
-
-function hasEmployeeSubject(message: string) {
-  return /empleado|empleada|colaborador|colaboradora|trabajador|trabajadora|usuario|persona|admin|administrador|administradora|correo|id\s*\d+/.test(message);
-}
-
-function isLikelyName(value: string) {
-  const tokens = value
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter(Boolean);
-
-  if (tokens.length < 2 || tokens.length > 4) return false;
-
-  const blocked = new Set([
-    'empleado',
-    'usuario',
-    'colaborador',
-    'trabajador',
-    'administrador',
-    'admin',
-    'informacion',
-    'datos',
-    'perfil',
-    'resumen',
-    'detalle',
-    'contrato',
-    'nomina',
-    'vacaciones',
-    'asistencia',
-    'incapacidad',
-    'incapacidades',
-    'pendiente',
-    'pendientes',
-    'permiso',
-    'permisos',
-    'como',
-    'donde',
-    'reviso',
-    'aprobar',
-    'rechazar',
-    'cambiar',
-    'validar',
-    'credencial',
-    'portal',
-    'movil',
-    'app',
-    'antes',
-    'despues',
-    'para',
-    'quiero',
-    'necesito',
-  ]);
-
-  return tokens.every((token) => /^[a-zñ.'-]{2,}$/.test(token) && !blocked.has(token));
-}
-
-function extractEmployeeLookup(rawMessage: string): EmployeeLookup | null {
-  const normalized = compactText(rawMessage);
-  const email = normalized.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/i)?.[0];
-  if (email) return { correo: email };
-
-  const idMatch = normalized.match(/(?:empleado|usuario|colaborador|trabajador|id)\s*#?\s*(\d+)/i);
-  if (idMatch) return { id: Number(idMatch[1]) };
-
-  const explicitSearchName = normalized.match(
-    /(?:busca|buscar|buscame|encuentra|localiza|consulta|consultar|muestra|mostrar)\s+(?:a\s+)?([a-zñ.'-]+(?:\s+[a-zñ.'-]+){1,3})/i
-  );
-
-  if (explicitSearchName) {
-    const nombre = explicitSearchName[1]
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (isLikelyName(nombre)) return { nombre };
-  }
-
-  const labeledName = normalized.match(
-    /(?:empleado|colaborador|trabajador|usuario|persona|admin|administrador)\s+(?:llamado|llamada|con nombre|nombre)\s+([a-zñ.'-]+(?:\s+[a-zñ.'-]+){1,3})/i
-  );
-
-  if (labeledName) {
-    const nombre = labeledName[1].replace(/\s+/g, ' ').trim();
-    if (isLikelyName(nombre)) return { nombre };
-  }
-
-  return null;
-}
-
-function isEmployeeDataIntent(message: string) {
-  const lookup = extractEmployeeLookup(message);
-  if (!lookup) return false;
-
-  if (isOperationalFlowIntent(message) && !hasEmployeeSearchVerb(message)) {
-    return false;
-  }
-
-  return (
-    hasEmployeeSearchVerb(message) ||
-    hasEmployeeDataTerm(message) ||
-    Boolean(lookup.id) ||
-    Boolean(lookup.correo)
-  );
-}
-
-function shouldAskEmployeeIdentifier(message: string) {
-  if (isOperationalFlowIntent(message)) return false;
-
-  return (
-    hasEmployeeSubject(message) &&
-    (hasEmployeeSearchVerb(message) || hasEmployeeDataTerm(message)) &&
-    !extractEmployeeLookup(message)
-  );
+  });
 }
 
 function safeText(value: unknown, fallback = 'No registrado') {
@@ -1170,26 +955,11 @@ async function findEmployeeCandidates(
   role: ChatbotRole,
   actorUserId: number
 ) {
-  const params: unknown[] = [];
-  let where = '';
-
-  if (role !== 'admin') {
-    where = 'u.id = ?';
-    params.push(actorUserId);
-  } else if (lookup.id) {
-    where = 'u.id = ?';
-    params.push(lookup.id);
-  } else if (lookup.correo) {
-    where = 'LOWER(u.correo) = ?';
-    params.push(lookup.correo.toLowerCase());
-  } else if (lookup.nombre) {
-    where = "LOWER(CONCAT_WS(' ', u.nombre, u.apellido, u.correo)) LIKE ?";
-    params.push(`%${lookup.nombre.toLowerCase()}%`);
-  } else {
-    where = 'u.id = ?';
-    params.push(actorUserId);
-  }
-
+  const { where, params } = buildEmployeeWhereClause(
+    lookup,
+    role,
+    actorUserId
+  );
   const [rows] = await pool.query(
     `SELECT
        u.id,
@@ -1466,7 +1236,7 @@ async function buildEmployeeDataResponse(
   }
 
   const actorUserId = Number(data.usuarioId);
-  if (!Number.isInteger(actorUserId) || actorUserId <= 0) {
+  if (!canQueryEmployeeData(role, actorUserId)) {
     return null;
   }
 
@@ -1521,7 +1291,7 @@ export function responderChatbot(data: {
   const channel = normalizeChannel(data.canal);
   const rawMessage = String(data.mensaje || '').trim();
   const mensaje = compactText(rawMessage);
-  const messageWithContext = buildContextMessage(
+  const messageWithContext = buildMaxContextMessage(
     rawMessage,
     data.historial
   );
@@ -1609,7 +1379,7 @@ export async function responderChatbotConDatos(
   const role = normalizeRole(data.role);
   const channel = normalizeChannel(data.canal);
   const rawMessage = String(data.mensaje || '').trim();
-  const messageWithContext = buildContextMessage(
+  const messageWithContext = buildMaxContextMessage(
     rawMessage,
     data.historial
   );
@@ -1664,17 +1434,7 @@ export async function crearTicketDesdeChatbot(data: {
       0,
       120
     ),
-    descripcion: [
-      'Consulta registrada desde Max, asistente interno SMART RH.',
-      '',
-      `Pregunta del usuario: ${mensaje}`,
-      '',
-      `Categoria detectada: ${data.respuesta.categoria}`,
-      `Intencion: ${data.respuesta.intent}`,
-      `Confianza: ${data.respuesta.confianza}`,
-      '',
-      `Respuesta entregada: ${data.respuesta.respuesta}`,
-    ].join('\n'),
+    descripcion: buildMaxTicketDescription(mensaje, data.respuesta),
     metadata: {
       origen: 'max_chatbot',
       asistente: ASSISTANT_NAME,
