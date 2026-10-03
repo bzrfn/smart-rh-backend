@@ -5,7 +5,7 @@ import {
   ChatbotResponse,
   ChatbotRole,
 } from './chatbot.types.js';
-import { buildMaxContextMessage } from './max.context.js';
+import { buildMaxIntentMessage } from './max.context.js';
 import {
   extractEmployeeLookup,
   isEmployeeDataIntent,
@@ -1291,7 +1291,7 @@ export function responderChatbot(data: {
   const channel = normalizeChannel(data.canal);
   const rawMessage = String(data.mensaje || '').trim();
   const mensaje = compactText(rawMessage);
-  const messageWithContext = buildMaxContextMessage(
+  const messageWithContext = buildMaxIntentMessage(
     rawMessage,
     data.historial
   );
@@ -1379,7 +1379,7 @@ export async function responderChatbotConDatos(
   const role = normalizeRole(data.role);
   const channel = normalizeChannel(data.canal);
   const rawMessage = String(data.mensaje || '').trim();
-  const messageWithContext = buildMaxContextMessage(
+  const messageWithContext = buildMaxIntentMessage(
     rawMessage,
     data.historial
   );

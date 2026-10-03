@@ -153,4 +153,72 @@ describe('Max intelligence core', () => {
     expect(response.respuesta).not.toMatch(/credenciales incorrectas|backend sea el ambiente/i);
     expect(mockedQuery.mock.calls[0][1]).toEqual([21]);
   });
+
+  it('usa continuidad conversacional para resolver correo despues de pedir un empleado', async () => {
+    mockEmployeeData();
+
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      historial: [
+        {
+          author: 'user',
+          text: 'busca a Brandon Bernal',
+        },
+      ],
+      mensaje: 'su correo es brandon.bernal@smart-rh.test',
+    });
+
+    expect(response.categoria).toBe('Datos de empleado');
+    expect(response.intent).toBe('consulta_empleado');
+    expect(response.respuesta).toMatch(/Brandon Bernal/i);
+    expect(mockedQuery.mock.calls[0][1]).toEqual(['brandon.bernal@smart-rh.test']);
+  });
+
+  it('cambia de tema despues de consultar un empleado y no repite expediente', async () => {
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      historial: [
+        {
+          author: 'user',
+          text: 'su correo es brandon.bernal@smart-rh.test',
+        },
+        {
+          author: 'assistant',
+          text: 'Encontre el expediente de Brandon Bernal.',
+        },
+      ],
+      mensaje: '¿Cómo cambio los permisos de un usuario sin afectar su cuenta?',
+    });
+
+    expect(response.categoria).toBe('Usuarios y permisos');
+    expect(response.categoria).not.toBe('Datos de empleado');
+    expect(response.respuesta).not.toMatch(/Encontre el expediente/i);
+    expect(response.pasos.join(' ')).toMatch(/Usuarios y permisos|rol|modulos|permisos/i);
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+
+  it('cambia a flujo de incapacidades aunque el historial tenga datos de empleado', async () => {
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      historial: [
+        {
+          author: 'user',
+          text: 'su correo es brandon.bernal@smart-rh.test',
+        },
+      ],
+      mensaje: '¿Cómo reviso incapacidades pendientes de un empleado?',
+    });
+
+    expect(response.categoria).toBe('Incapacidades');
+    expect(response.categoria).not.toBe('Datos de empleado');
+    expect(response.respuesta).not.toMatch(/No encontre un empleado/i);
+    expect(mockedQuery).not.toHaveBeenCalled();
+  });
+
 });
