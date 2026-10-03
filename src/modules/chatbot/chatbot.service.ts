@@ -598,16 +598,67 @@ function isAdminInvitationIntent(message: string) {
   return talksAboutAdmin && talksAboutInvite && talksAboutUser;
 }
 
-function resolveDirectEntryId(message: string) {
-  if (/incapacidades?|incapacidad/.test(message) && /pendiente|pendientes|revisar|revision|empleado|colaborador/.test(message)) {
-    return 'incapacidades';
-  }
+function isUserPermissionsIntent(message: string) {
+  return (
+    /usuario|usuarios|cuenta|cuentas|permiso|permisos|rol|roles/.test(message) &&
+    /agreg|crear|nuevo|alta|asign|cambiar|editar|modificar|activar|desactivar|invitar|invitacion/.test(message)
+  );
+}
 
+function isIncapacityOperationalIntent(message: string) {
+  return (
+    /incapacidad|incapacidades|imss|comprobante|validacion/.test(message) &&
+    /como|donde|revis|aprobar|rechazar|pendiente|aparece|aparezca|proceso|flujo|primero|validar|adjuntar|registrar/.test(message)
+  );
+}
+
+function isAttendanceOperationalIntent(message: string) {
+  return (
+    /asistencia|asistencias|entrada|salida|pendiente|pendientes|checador|qr/.test(message) &&
+    /como|donde|revis|aprobar|rechazar|corregir|justificar|pendiente|pendientes|registro|flujo/.test(message)
+  );
+}
+
+function isCredentialOperationalIntent(message: string) {
+  return (
+    /credencial|documentos|contrato|expediente|qr/.test(message) &&
+    /como|donde|revis|validar|verificar|cargado|consultar|flujo/.test(message)
+  );
+}
+
+function resolveDirectEntryId(message: string) {
   if (isAdminInvitationIntent(message)) {
     return 'usuarios-admin';
   }
 
+  if (isUserPermissionsIntent(message)) {
+    return 'usuarios-admin';
+  }
+
+  if (isIncapacityOperationalIntent(message)) {
+    return 'incapacidades';
+  }
+
+  if (isAttendanceOperationalIntent(message)) {
+    return 'asistencia-admin';
+  }
+
+  if (isCredentialOperationalIntent(message)) {
+    return 'credencial';
+  }
+
   return null;
+}
+
+function isOperationalFlowIntent(message: string) {
+  if (resolveDirectEntryId(message)) return true;
+
+  const processCue =
+    /como|donde|paso|proceso|flujo|ayudame|que reviso|que hago|no se|no entiendo/.test(message);
+  const moduleCue =
+    /usuario|usuarios|permiso|permisos|incapacidad|incapacidades|asistencia|credencial|contrato|documentos|vacaciones|nomina/.test(message);
+
+  return processCue && moduleCue;
 }
 
 function scoreEntry(entry: ChatbotKnowledgeEntry, message: string) {
@@ -972,37 +1023,125 @@ function buildProjectKnowledgeResponse(
   };
 }
 
-function isEmployeeDataIntent(message: string) {
-  const asksData =
-    /informacion|datos|perfil|resumen|detalle|estatus|estado|expediente|contrato|nomina|vacaciones|asistencia|incapacidad|incapacidades|permisos/.test(message);
-  const mentionsEmployee =
-    /empleado|colaborador|trabajador|usuario|persona|admin|administrador|correo|id\s*\d+/.test(message);
+function hasEmployeeSearchVerb(message: string) {
+  return /busca|buscar|buscame|encuentra|localiza|consulta|consultar|muestra|mostrar|dame|ver/.test(message);
+}
 
-  return asksData && mentionsEmployee;
+function hasEmployeeDataTerm(message: string) {
+  return /informacion|datos|perfil|resumen|detalle|estatus|estado|expediente|contrato|nomina|vacaciones|asistencia|incapacidad|incapacidades|permisos/.test(message);
+}
+
+function hasEmployeeSubject(message: string) {
+  return /empleado|empleada|colaborador|colaboradora|trabajador|trabajadora|usuario|persona|admin|administrador|administradora|correo|id\s*\d+/.test(message);
+}
+
+function isLikelyName(value: string) {
+  const tokens = value
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  if (tokens.length < 2 || tokens.length > 4) return false;
+
+  const blocked = new Set([
+    'empleado',
+    'usuario',
+    'colaborador',
+    'trabajador',
+    'administrador',
+    'admin',
+    'informacion',
+    'datos',
+    'perfil',
+    'resumen',
+    'detalle',
+    'contrato',
+    'nomina',
+    'vacaciones',
+    'asistencia',
+    'incapacidad',
+    'incapacidades',
+    'pendiente',
+    'pendientes',
+    'permiso',
+    'permisos',
+    'como',
+    'donde',
+    'reviso',
+    'aprobar',
+    'rechazar',
+    'cambiar',
+    'validar',
+    'credencial',
+    'portal',
+    'movil',
+    'app',
+    'antes',
+    'despues',
+    'para',
+    'quiero',
+    'necesito',
+  ]);
+
+  return tokens.every((token) => /^[a-zñ.'-]{2,}$/.test(token) && !blocked.has(token));
 }
 
 function extractEmployeeLookup(rawMessage: string): EmployeeLookup | null {
   const normalized = compactText(rawMessage);
-  const email = normalized.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)?.[0];
+  const email = normalized.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/i)?.[0];
   if (email) return { correo: email };
 
   const idMatch = normalized.match(/(?:empleado|usuario|colaborador|trabajador|id)\s*#?\s*(\d+)/i);
   if (idMatch) return { id: Number(idMatch[1]) };
 
-  const nameMatch = normalized.match(
-    /(?:empleado|colaborador|trabajador|usuario|persona|admin|administrador)\s+([a-z0-9ñ\s.'-]{3,80})/i
+  const explicitSearchName = normalized.match(
+    /(?:busca|buscar|buscame|encuentra|localiza|consulta|consultar|muestra|mostrar)\s+(?:a\s+)?([a-zñ.'-]+(?:\s+[a-zñ.'-]+){1,3})/i
   );
 
-  if (nameMatch) {
-    const nombre = nameMatch[1]
-      .replace(/\b(informacion|datos|perfil|resumen|detalle|estatus|estado|contrato|nomina|vacaciones|asistencia|incapacidades?)\b/gi, ' ')
+  if (explicitSearchName) {
+    const nombre = explicitSearchName[1]
       .replace(/\s+/g, ' ')
       .trim();
 
-    if (nombre.length >= 3) return { nombre };
+    if (isLikelyName(nombre)) return { nombre };
+  }
+
+  const labeledName = normalized.match(
+    /(?:empleado|colaborador|trabajador|usuario|persona|admin|administrador)\s+(?:llamado|llamada|con nombre|nombre)\s+([a-zñ.'-]+(?:\s+[a-zñ.'-]+){1,3})/i
+  );
+
+  if (labeledName) {
+    const nombre = labeledName[1].replace(/\s+/g, ' ').trim();
+    if (isLikelyName(nombre)) return { nombre };
   }
 
   return null;
+}
+
+function isEmployeeDataIntent(message: string) {
+  const lookup = extractEmployeeLookup(message);
+  if (!lookup) return false;
+
+  if (isOperationalFlowIntent(message) && !hasEmployeeSearchVerb(message)) {
+    return false;
+  }
+
+  return (
+    hasEmployeeSearchVerb(message) ||
+    hasEmployeeDataTerm(message) ||
+    Boolean(lookup.id) ||
+    Boolean(lookup.correo)
+  );
+}
+
+function shouldAskEmployeeIdentifier(message: string) {
+  if (isOperationalFlowIntent(message)) return false;
+
+  return (
+    hasEmployeeSubject(message) &&
+    (hasEmployeeSearchVerb(message) || hasEmployeeDataTerm(message)) &&
+    !extractEmployeeLookup(message)
+  );
 }
 
 function safeText(value: unknown, fallback = 'No registrado') {
@@ -1286,7 +1425,43 @@ async function buildEmployeeDataResponse(
   channel: ChatbotChannel,
   messageWithContext: string
 ): Promise<ChatbotResponse | null> {
+  const lookup = extractEmployeeLookup(messageWithContext);
+
   if (!isEmployeeDataIntent(messageWithContext)) {
+    if (!shouldAskEmployeeIdentifier(messageWithContext)) {
+      return null;
+    }
+
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Datos de empleado',
+      titulo: 'Falta identificar al empleado',
+      intent: 'solicitar_identificador_empleado',
+      confianza: 'media',
+      respuesta:
+        channel === 'mobile'
+          ? 'Puedo ayudarte a consultar datos de empleado desde la app movil, pero necesito identificarlo con precision para no mostrar informacion equivocada.'
+          : 'Puedo ayudarte a consultar datos de empleado desde el portal web, pero necesito identificarlo con precision para no mostrar informacion equivocada.',
+      pasos: [
+        'Escribe el ID del empleado si lo tienes.',
+        'Tambien puedes usar su correo institucional.',
+        'Si solo tienes el nombre, escribe nombre y apellido completos.',
+      ],
+      preguntas_seguimiento: [
+        'Cual es el ID, correo o nombre completo del empleado?',
+      ],
+      acciones: [],
+      sugerencias: [
+        'Buscar por ID',
+        'Buscar por correo',
+        'Buscar por nombre',
+      ],
+      requiere_escalamiento: false,
+      puede_crear_ticket: false,
+    };
+  }
+
+  if (!lookup) {
     return null;
   }
 
@@ -1295,7 +1470,6 @@ async function buildEmployeeDataResponse(
     return null;
   }
 
-  const lookup = extractEmployeeLookup(messageWithContext) || {};
   const candidates = await findEmployeeCandidates(lookup, role, actorUserId);
 
   if (candidates.length === 0) {
