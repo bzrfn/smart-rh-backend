@@ -6,6 +6,7 @@ jest.mock('../../src/config/db.js', () => ({
 
 import { pool } from '../../src/config/db.js';
 import {
+  responderChatbot,
   responderChatbotConDatos,
 } from '../../src/modules/chatbot/chatbot.service.js';
 
@@ -219,6 +220,87 @@ describe('Max intelligence core', () => {
     expect(response.categoria).not.toBe('Datos de empleado');
     expect(response.respuesta).not.toMatch(/No encontre un empleado/i);
     expect(mockedQuery).not.toHaveBeenCalled();
+  });
+
+  it('no expone telefono ni direccion en resumen general de empleado', async () => {
+    mockEmployeeData();
+
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      mensaje: 'busca a Brandon Bernal',
+    });
+
+    const visibleText = [response.respuesta, ...response.pasos].join(' ');
+
+    expect(response.categoria).toBe('Datos de empleado');
+    expect(visibleText).toMatch(/Datos de contacto: ocultos/i);
+    expect(visibleText).not.toMatch(/5550001111|telefono|direccion|No visible/i);
+  });
+
+  it('diferencia invitacion de administrador y cambio de permisos', () => {
+    const inviteResponse = responderChatbot({
+      role: 'admin',
+      canal: 'web',
+      mensaje: 'Necesito invitar a un nuevo administrador, ¿cómo lo hago?',
+    });
+
+    const permissionsResponse = responderChatbot({
+      role: 'admin',
+      canal: 'web',
+      mensaje: '¿Cómo cambio los permisos de un usuario sin afectar su cuenta?',
+    });
+
+    expect(inviteResponse.categoria).toBe('Usuarios y permisos');
+    expect(permissionsResponse.categoria).toBe('Usuarios y permisos');
+    expect(inviteResponse.respuesta).toMatch(/invitar/i);
+    expect(permissionsResponse.respuesta).toMatch(/cambiar permisos|ajusta rol y modulos/i);
+    expect(inviteResponse.respuesta).not.toBe(permissionsResponse.respuesta);
+  });
+
+  it('prepara ticket con contexto cuando el usuario no pudo resolver el flujo', async () => {
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      historial: [
+        {
+          author: 'user',
+          text: '¿Cómo reviso pendientes de asistencia?',
+        },
+        {
+          author: 'assistant',
+          text: 'Revisa empleado, fecha, tipo de registro y evidencia.',
+        },
+      ],
+      mensaje: 'No pude resolverlo, ¿puedes ayudarme a levantar un ticket con este contexto?',
+    });
+
+    expect(response.categoria).toBe('Soporte');
+    expect(response.intent).toBe('preparar_ticket_contexto');
+    expect(response.respuesta).not.toMatch(/Max usa el contexto reciente/i);
+    expect(response.pasos.join(' ')).toMatch(/Modulo probable: Asistencia/i);
+    expect(response.puede_crear_ticket).toBe(true);
+  });
+
+  it('interpreta si como confirmacion de ticket cuando habia oferta previa', async () => {
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      historial: [
+        {
+          author: 'assistant',
+          text: 'Quieres crear el ticket ahora? Crear ticket con contexto',
+        },
+      ],
+      mensaje: 'si',
+    });
+
+    expect(response.categoria).toBe('Soporte');
+    expect(response.intent).toBe('confirmacion_ticket_contexto');
+    expect(response.puede_crear_ticket).toBe(true);
   });
 
 });

@@ -13,7 +13,9 @@ import {
   type EmployeeLookup,
 } from './max.entities.js';
 import {
+  isAdminInvitationIntent,
   isOperationalFlowIntent,
+  isUserPermissionsIntent,
   resolveDirectEntryId,
 } from './max.intent.js';
 import {
@@ -450,14 +452,14 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
       'crud usuarios',
     ],
     respuesta:
-      'Si, te ayudo con ese flujo. Para agregar un administrador no necesitas ir a soporte: en el portal entra a Usuarios y permisos, crea o invita al usuario, asigna el rol admin y valida los permisos de modulos antes de enviar la invitacion al correo.',
+      'Usuarios y permisos permite crear o invitar usuarios, asignar rol, activar o desactivar modulos y ajustar accesos administrativos sin modificar datos innecesarios de la cuenta.',
     pasos: [
       'En el portal web abre Usuarios y permisos desde el menu administrativo.',
-      'Selecciona Nuevo usuario, Crear usuario o Enviar invitacion, segun el boton disponible en el CRUD.',
-      'Captura nombre, correo y datos base del nuevo administrador.',
-      'Asigna el rol admin y confirma que los permisos de modulos correspondan a lo que realmente necesita.',
-      'Envia la invitacion y verifica que el usuario quede como pendiente, invitado o activo segun el flujo configurado.',
-      'Pide al nuevo administrador abrir el correo de invitacion, completar el acceso y validar inicio de sesion.',
+      'Si es usuario nuevo, usa Nuevo usuario, Crear usuario o Enviar invitacion, segun el boton disponible.',
+      'Si el usuario ya existe, abre su detalle y modifica solo rol o modulos necesarios.',
+      'Para un nuevo administrador, asigna rol admin y valida que los modulos habilitados correspondan a su responsabilidad.',
+      'Guarda cambios o envia la invitacion y verifica que el estado quede pendiente, invitado o activo segun el flujo.',
+      'Pide al usuario cerrar sesion y volver a entrar si el permiso no se refleja al instante.',
     ],
     preguntas_seguimiento: [
       'Ya tienes el correo del nuevo administrador?',
@@ -741,21 +743,52 @@ function buildNaturalAnswer(
   entry: ChatbotKnowledgeEntry,
   isProblem: boolean,
   confidence: ChatbotResponse['confianza'],
-  channel: ChatbotChannel
+  channel: ChatbotChannel,
+  message: string
 ) {
+  const channelLabel = channel === 'mobile' ? 'app movil' : 'portal web';
+  const moduleClosing =
+    'Si algun boton aparece con otro nombre, dime exactamente que ves y lo ajustamos al caso real.';
+
+  if (entry.id === 'usuarios-admin') {
+    if (isAdminInvitationIntent(message)) {
+      return `Si. Para invitar a un nuevo administrador desde ${channelLabel}, entra a Usuarios y permisos, registra sus datos base, asigna rol admin, revisa los modulos habilitados y envia la invitacion. No lo mandaria a soporte salvo que el correo no llegue, el boton no aparezca o el usuario quede bloqueado. ${moduleClosing}`;
+    }
+
+    if (isUserPermissionsIntent(message)) {
+      return `Para agregar un usuario o cambiar permisos sin afectar su cuenta, trabaja desde Usuarios y permisos: primero localiza o crea el usuario, despues ajusta rol y modulos, guarda cambios y pide cerrar sesion si el permiso no se refleja. ${moduleClosing}`;
+    }
+  }
+
+  if (entry.id === 'incapacidades') {
+    if (/no le aparece|no aparece|aparezca|no ve|no sale/.test(message)) {
+      return `Primero validaria si la incapacidad fue registrada, si el comprobante quedo adjunto y si el estado permite verla desde ${channelLabel}. Luego revisaria fechas, empleado asociado y observaciones de validacion antes de pensar en ticket. ${moduleClosing}`;
+    }
+
+    return `Para incapacidades, separa el caso en registro, comprobante, validacion y revision administrativa. Desde ${channelLabel} revisa estado, fechas, empleado y observaciones antes de aprobar o rechazar. ${moduleClosing}`;
+  }
+
+  if (entry.id === 'asistencia-admin') {
+    return `Para pendientes de asistencia, revisa primero empleado, fecha, tipo de registro y evidencia. Despues decide si corresponde aprobar, rechazar o pedir correccion; no conviene cerrar el caso sin validar la jornada real. ${moduleClosing}`;
+  }
+
+  if (entry.id === 'credencial') {
+    return `Para credencial, contrato o documentos, primero identifica si quieres consultar un documento propio, revisar si ya esta cargado o validar un QR administrativo. Desde ${channelLabel} el flujo cambia segun rol y permiso disponible. ${moduleClosing}`;
+  }
+
   const intro = isProblem
     ? 'Te entiendo. Vamos por partes y lo resolvemos desde el flujo correcto.'
-    : 'Va, lo revisamos con calma.';
+    : 'Revisemos ese flujo.';
 
   const channelContext =
     channel === 'mobile'
-      ? ' Estoy tomando en cuenta que estas escribiendo desde la app movil.'
-      : ' Estoy tomando en cuenta que estas en el portal web.';
+      ? ' Estoy tomando en cuenta que escribes desde la app movil.'
+      : ' Estoy tomando en cuenta que escribes desde el portal web.';
 
   const closing =
     confidence === 'baja'
-      ? ' Si despues de revisar estos datos no queda claro, ahi si dejamos un ticket con el contexto completo.'
-      : ' Te dejo el camino directo y despues afinamos cualquier detalle que no aparezca igual en tu pantalla.';
+      ? ' Si despues de revisar estos datos no queda claro, dejamos un ticket con el contexto completo.'
+      : ` ${moduleClosing}`;
 
   return `${intro} ${entry.respuesta}${channelContext}${closing}`;
 }
@@ -853,6 +886,124 @@ function buildFallbackResponse(
     ],
     acciones: [
 
+    ],
+    sugerencias: getSuggestions(role),
+    requiere_escalamiento: true,
+    puede_crear_ticket: true,
+  };
+}
+
+function isTicketRequestMessage(message: string) {
+  return /crear.*ticket|levantar.*ticket|abrir.*ticket|ticket.*contexto|no pude resolver|no se resolvio|sigue igual|no quedo|no funciono|no lo pude resolver/.test(message);
+}
+
+function isAffirmativeMessage(message: string) {
+  return /^(si|sí|va|ok|dale|adelante|confirmo|confirmado|crealo|créalo|hazlo|de acuerdo|correcto)$/.test(message.trim());
+}
+
+function hasRecentTicketOffer(historial?: ChatbotMessageContext[]) {
+  return (historial || [])
+    .slice(-6)
+    .some((item) =>
+      /crear ticket|ticket con contexto|quieres que cree|quieres crear|puedo crear un ticket|crear_ticket/i.test(
+        item.text || ''
+      )
+    );
+}
+
+function detectModuleFromText(value: string) {
+  if (/usuario|usuarios|permiso|permisos|admin|administrador|invitacion|invitar/.test(value)) {
+    return 'Usuarios y permisos';
+  }
+
+  if (/incapacidad|incapacidades|imss|comprobante/.test(value)) {
+    return 'Incapacidades';
+  }
+
+  if (/asistencia|pendiente|entrada|salida|checador|qr/.test(value)) {
+    return 'Asistencia';
+  }
+
+  if (/credencial|documento|documentos|contrato|expediente/.test(value)) {
+    return 'Credencial y documentos';
+  }
+
+  if (/vacacion|vacaciones/.test(value)) {
+    return 'Vacaciones';
+  }
+
+  if (/nomina|pago|recibo|salario|sueldo/.test(value)) {
+    return 'Nomina';
+  }
+
+  return 'Soporte';
+}
+
+function summarizeConversationForTicket(
+  message: string,
+  historial: ChatbotMessageContext[] | undefined,
+  channel: ChatbotChannel
+) {
+  const userMessages = (historial || [])
+    .filter((item) => item.author !== 'assistant')
+    .map((item) => compactText(item.text))
+    .filter(Boolean)
+    .slice(-4);
+  const joined = [...userMessages, compactText(message)]
+    .filter(Boolean)
+    .join(' | ');
+  const module = detectModuleFromText(joined);
+  const channelLabel = channel === 'mobile' ? 'app movil' : 'portal web';
+
+  return {
+    module,
+    channelLabel,
+    summary:
+      joined ||
+      'El usuario solicito seguimiento desde Max, pero no hay suficiente detalle operativo en el historial.',
+  };
+}
+
+function buildTicketContextResponse(
+  role: ChatbotRole,
+  channel: ChatbotChannel,
+  message: string,
+  historial?: ChatbotMessageContext[],
+  confirmed = false
+): ChatbotResponse {
+  const ticketContext = summarizeConversationForTicket(
+    message,
+    historial,
+    channel
+  );
+
+  return {
+    asistente: ASSISTANT_NAME,
+    categoria: 'Soporte',
+    titulo: confirmed ? 'Confirmacion de ticket' : 'Ticket con contexto preparado',
+    intent: confirmed
+      ? 'confirmacion_ticket_contexto'
+      : 'preparar_ticket_contexto',
+    confianza: 'alta',
+    respuesta: confirmed
+      ? 'Si. Ya tengo el contexto suficiente para continuar con el ticket sin volver a pedirte todo desde cero.'
+      : 'Si. Puedo ayudarte a levantar el ticket con el contexto reciente de la conversacion. Antes de crearlo, dejo el resumen ordenado para que se envie con informacion util.',
+    pasos: [
+      `Canal detectado: ${ticketContext.channelLabel}.`,
+      `Modulo probable: ${ticketContext.module}.`,
+      `Resumen operativo: ${ticketContext.summary}.`,
+      'Siguiente paso: confirma la creacion del ticket o usa el boton Crear ticket con contexto.',
+    ],
+    preguntas_seguimiento: [
+      'Quieres crear el ticket ahora?',
+      'Quieres agregar algun detalle antes de enviarlo?',
+    ],
+    acciones: [
+      {
+        label: 'Crear ticket con contexto',
+        target: 'Soporte',
+        scope: 'both',
+      },
     ],
     sugerencias: getSuggestions(role),
     requiere_escalamiento: true,
@@ -966,8 +1117,6 @@ async function findEmployeeCandidates(
        u.nombre,
        u.apellido,
        u.correo,
-       u.telefono,
-       u.direccion,
        u.fecha_ingreso,
        u.dias_vacaciones_disponibles,
        u.activo,
@@ -1106,7 +1255,7 @@ function buildEmployeeResponse(
   const pasos = [
     `Empleado: ${nombreCompleto} · ID ${user.id} · correo ${safeText(user.correo)}.`,
     `Rol: ${safeText(user.role)} · estado: ${Number(user.activo) === 1 ? 'activo' : 'inactivo'} · ingreso: ${formatDate(user.fecha_ingreso)}.`,
-    `Contacto: telefono ${safeText(user.telefono)} · direccion ${safeText(user.direccion)}.`,
+    'Datos de contacto: ocultos por privacidad en el resumen general.',
     `Vacaciones disponibles: ${Number(user.dias_vacaciones_disponibles ?? 0)} dia(s).`,
     contrato
       ? `Contrato: ${safeText(contrato.tipo_contrato)} · estado ${safeText(contrato.estado)} · salario ${formatMoney(contrato.salario_base)} · vigencia ${formatDate(contrato.fecha_inicio)} a ${formatDate(contrato.fecha_fin)}.`
@@ -1300,6 +1449,19 @@ export function responderChatbot(data: {
     throw new AppError('El mensaje es obligatorio', 400);
   }
 
+  const confirmsTicket =
+    isAffirmativeMessage(mensaje) && hasRecentTicketOffer(data.historial);
+
+  if (isTicketRequestMessage(mensaje) || confirmsTicket) {
+    return buildTicketContextResponse(
+      role,
+      channel,
+      rawMessage,
+      data.historial,
+      confirmsTicket
+    );
+  }
+
   const conversational = buildConversationResponse(role, mensaje, channel);
   if (conversational) {
     return conversational;
@@ -1358,7 +1520,13 @@ export function responderChatbot(data: {
     titulo: best.entry.titulo,
     intent: best.entry.categoria === 'Acceso' || isProblem ? 'diagnostico' : confidence === 'baja' ? 'escalamiento' : 'orientacion',
     confianza: confidence,
-    respuesta: buildNaturalAnswer(best.entry, isProblem, confidence, channel),
+    respuesta: buildNaturalAnswer(
+      best.entry,
+      isProblem,
+      confidence,
+      channel,
+      messageWithContext
+    ),
     pasos: adaptSteps(best.entry.pasos, channel),
     preguntas_seguimiento: adaptFollowUpQuestions(
       best.entry.preguntas_seguimiento,

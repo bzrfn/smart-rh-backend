@@ -22,7 +22,7 @@ export function isAdminInvitationIntent(message: string) {
 export function isUserPermissionsIntent(message: string) {
   return (
     has(message, /usuario|usuarios|cuenta|cuentas|permiso|permisos|rol|roles/) &&
-    has(message, /agreg|crear|nuevo|alta|asign|cambiar|editar|modificar|activar|desactivar|invitar|invitacion/)
+    has(message, /agreg|crear|nuevo|alta|asign|cambia|cambio|cambiar|editar|modific|activar|desactivar|invitar|invitacion/)
   );
 }
 

@@ -48,4 +48,15 @@ describe('Max modular intelligence architecture', () => {
     expect(prompts).toMatch(/asistencia/i);
     expect(prompts).toMatch(/Brandon Bernal|id 21/i);
   });
+
+  it('permite confirmar ticket desde continuidad conversacional', () => {
+    const controller = fs.readFileSync(
+      path.join(chatbotDir, 'chatbot.controller.ts'),
+      'utf8'
+    );
+
+    expect(controller).toMatch(/isConfirmation/);
+    expect(controller).toMatch(/recentTicketOffer/);
+    expect(controller).toMatch(/crear ticket\|ticket con contexto/);
+  });
 });

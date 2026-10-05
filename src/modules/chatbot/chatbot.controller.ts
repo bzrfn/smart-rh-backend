@@ -24,11 +24,24 @@ function requireAuth(req: AuthRequest) {
 }
 
 function shouldCreateTicket(body: any) {
+  const mensaje = String(body?.mensaje || '').trim().toLowerCase();
+  const isConfirmation = /^(si|sí|va|ok|dale|adelante|confirmo|confirmado|crealo|créalo|hazlo|de acuerdo|correcto)$/.test(
+    mensaje
+  );
+  const recentTicketOffer = normalizeHistory(body).some(
+    (item: { author: string; text: string }) =>
+      item.author === 'assistant' &&
+      /crear ticket|ticket con contexto|quieres que cree|quieres crear|puedo crear un ticket/i.test(
+        item.text
+      )
+  );
+
   return Boolean(
     body?.crear_ticket ||
       body?.crearTicket ||
       body?.escalar ||
-      body?.crear_soporte
+      body?.crear_soporte ||
+      (isConfirmation && recentTicketOffer)
   );
 }
 

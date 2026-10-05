@@ -34,4 +34,14 @@ export const MAX_TRAINING_CASES = [
     expectedCategory: 'Datos de empleado',
     shouldQueryEmployeeData: true,
   },
+  {
+    prompt: 'No pude resolverlo, ¿puedes ayudarme a levantar un ticket con este contexto?',
+    expectedCategory: 'Soporte',
+    shouldQueryEmployeeData: false,
+  },
+  {
+    prompt: '¿Cómo cambio los permisos de un usuario sin afectar su cuenta?',
+    expectedCategory: 'Usuarios y permisos',
+    shouldQueryEmployeeData: false,
+  },
 ];
