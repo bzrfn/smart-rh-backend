@@ -28,7 +28,20 @@ function shouldCreateTicket(body: any) {
   const isConfirmation = /^(si|sí|va|ok|dale|adelante|confirmo|confirmado|crealo|créalo|hazlo|de acuerdo|correcto)$/.test(
     mensaje
   );
-  const recentTicketOffer = normalizeHistory(body).some(
+  const history = normalizeHistory(body);
+  const recentTicketAlreadyCreated = history.some(
+    (item: { author: string; text: string }) =>
+      item.author === 'assistant' &&
+      /cree el ticket con folio|creé el ticket con folio|envie la consulta a soporte|envié la consulta a soporte|ticket con folio/i.test(
+        item.text
+      )
+  );
+
+  if (recentTicketAlreadyCreated) {
+    return false;
+  }
+
+  const recentTicketOffer = history.some(
     (item: { author: string; text: string }) =>
       item.author === 'assistant' &&
       /crear ticket|ticket con contexto|quieres que cree|quieres crear|puedo crear un ticket/i.test(

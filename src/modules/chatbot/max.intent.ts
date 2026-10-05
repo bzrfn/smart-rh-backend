@@ -29,7 +29,7 @@ export function isUserPermissionsIntent(message: string) {
 export function isIncapacityOperationalIntent(message: string) {
   return (
     has(message, /incapacidad|incapacidades|imss|comprobante|validacion/) &&
-    has(message, /como|donde|revis|aprobar|rechazar|pendiente|aparece|aparezca|proceso|flujo|primero|validar|adjuntar|registrar/)
+    has(message, /como|donde|revis|aprob|rechaz|pendiente|aparece|aparezca|proceso|flujo|primero|validar|adjuntar|registrar/)
   );
 }
 

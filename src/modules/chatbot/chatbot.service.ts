@@ -747,8 +747,12 @@ function buildNaturalAnswer(
   message: string
 ) {
   const channelLabel = channel === 'mobile' ? 'app movil' : 'portal web';
-  const moduleClosing =
-    'Si algun boton aparece con otro nombre, dime exactamente que ves y lo ajustamos al caso real.';
+  const interfaceUncertainty = /boton|pantalla|no aparece|no encuentro|no veo|donde esta|donde entro|como aparece/.test(
+    message
+  );
+  const moduleClosing = interfaceUncertainty
+    ? ' Si el nombre del boton cambia en tu pantalla, dime el texto exacto y lo aterrizamos.'
+    : '';
 
   if (entry.id === 'usuarios-admin') {
     if (isAdminInvitationIntent(message)) {
@@ -756,24 +760,32 @@ function buildNaturalAnswer(
     }
 
     if (isUserPermissionsIntent(message)) {
-      return `Para agregar un usuario o cambiar permisos sin afectar su cuenta, trabaja desde Usuarios y permisos: primero localiza o crea el usuario, despues ajusta rol y modulos, guarda cambios y pide cerrar sesion si el permiso no se refleja. ${moduleClosing}`;
+      return `Para cambiar permisos sin afectar la cuenta, no recrees al usuario: localizalo en Usuarios y permisos, abre su detalle, ajusta solo rol o modulos necesarios, guarda y valida con un nuevo inicio de sesion si el cambio no se refleja.${moduleClosing}`;
     }
   }
 
   if (entry.id === 'incapacidades') {
     if (/no le aparece|no aparece|aparezca|no ve|no sale/.test(message)) {
-      return `Primero validaria si la incapacidad fue registrada, si el comprobante quedo adjunto y si el estado permite verla desde ${channelLabel}. Luego revisaria fechas, empleado asociado y observaciones de validacion antes de pensar en ticket. ${moduleClosing}`;
+      return `Primero validaria si la incapacidad existe, si quedo asociada al empleado correcto y si su estado permite verla desde ${channelLabel}. Despues revisaria comprobante, fechas y observaciones de validacion antes de levantar ticket.${moduleClosing}`;
     }
 
-    return `Para incapacidades, separa el caso en registro, comprobante, validacion y revision administrativa. Desde ${channelLabel} revisa estado, fechas, empleado y observaciones antes de aprobar o rechazar. ${moduleClosing}`;
+    if (/aprob|rechaz|revision|revisar/.test(message)) {
+      return `Para aprobar o rechazar una incapacidad desde ${channelLabel}, revisa la solicitud pendiente, valida comprobante y fechas, lee observaciones automaticas y deja una decision con comentario administrativo. No mezcles este flujo con la busqueda general de empleado.${moduleClosing}`;
+    }
+
+    return `Para incapacidades, separa el caso en registro, comprobante, validacion y revision administrativa. Desde ${channelLabel} revisa estado, fechas, empleado y observaciones antes de decidir el siguiente paso.${moduleClosing}`;
   }
 
   if (entry.id === 'asistencia-admin') {
-    return `Para pendientes de asistencia, revisa primero empleado, fecha, tipo de registro y evidencia. Despues decide si corresponde aprobar, rechazar o pedir correccion; no conviene cerrar el caso sin validar la jornada real. ${moduleClosing}`;
+    return `Para pendientes de asistencia, revisa empleado, fecha, tipo de registro y evidencia. Despues decide si corresponde aprobar, rechazar o pedir correccion; no conviene cerrar el caso sin validar la jornada real.${moduleClosing}`;
   }
 
   if (entry.id === 'credencial') {
-    return `Para credencial, contrato o documentos, primero identifica si quieres consultar un documento propio, revisar si ya esta cargado o validar un QR administrativo. Desde ${channelLabel} el flujo cambia segun rol y permiso disponible. ${moduleClosing}`;
+    if (/validar|verificar|qr/.test(message)) {
+      return `Para validar una credencial desde ${channelLabel}, usa el verificador administrativo de QR, confirma que el usuario este activo y revisa vigencia. Si marca vencida o invalida, el siguiente paso es renovar credencial o revisar estado del empleado.${moduleClosing}`;
+    }
+
+    return `Para credencial, contrato o documentos, primero identifica si quieres consultar un documento propio, revisar si ya esta cargado o validar un QR administrativo. Desde ${channelLabel} el flujo cambia segun rol y permiso disponible.${moduleClosing}`;
   }
 
   const intro = isProblem
@@ -788,9 +800,53 @@ function buildNaturalAnswer(
   const closing =
     confidence === 'baja'
       ? ' Si despues de revisar estos datos no queda claro, dejamos un ticket con el contexto completo.'
-      : ` ${moduleClosing}`;
+      : moduleClosing;
 
   return `${intro} ${entry.respuesta}${channelContext}${closing}`;
+}
+
+function buildOperationalSteps(
+  entry: ChatbotKnowledgeEntry,
+  message: string,
+  channel: ChatbotChannel
+) {
+  if (entry.id === 'usuarios-admin' && isUserPermissionsIntent(message) && !isAdminInvitationIntent(message)) {
+    return adaptSteps([
+      'Abre Usuarios y permisos desde el menu administrativo.',
+      'Busca el usuario existente por nombre o correo y entra a su detalle.',
+      'Modifica solo el rol o los modulos que necesita; no recrees la cuenta.',
+      'Guarda cambios y pide cerrar sesion si el permiso no se refleja.',
+    ], channel);
+  }
+
+  if (entry.id === 'incapacidades' && /aprob|rechaz/.test(message)) {
+    return adaptSteps([
+      'Abre Incapacidades y filtra las solicitudes pendientes.',
+      'Selecciona la incapacidad y revisa empleado, fechas, dias calculados y comprobante.',
+      'Lee la validacion automatica y observaciones antes de decidir.',
+      'Aprueba si todo coincide o rechaza dejando el motivo administrativo.',
+    ], channel);
+  }
+
+  if (entry.id === 'incapacidades' && /no le aparece|no aparece|aparezca|no ve|no sale/.test(message)) {
+    return adaptSteps([
+      'Busca si la incapacidad fue registrada para el empleado correcto.',
+      'Confirma que el comprobante PDF quedo adjunto y legible.',
+      'Revisa estado, fechas y observaciones de validacion.',
+      'Si existe pero no se muestra, documenta usuario, folio y pantalla para soporte.',
+    ], channel);
+  }
+
+  if (entry.id === 'credencial' && /validar|verificar|qr/.test(message)) {
+    return adaptSteps([
+      'Abre el verificador de credencial QR desde herramientas administrativas.',
+      'Escanea o captura el QR de la credencial del empleado.',
+      'Valida nombre, estado del usuario, vigencia y coincidencia con contrato activo.',
+      'Si aparece vencida o invalida, solicita renovacion antes de aceptarla.',
+    ], channel);
+  }
+
+  return adaptSteps(entry.pasos, channel);
 }
 
 function adaptFollowUpQuestions(
@@ -911,32 +967,50 @@ function hasRecentTicketOffer(historial?: ChatbotMessageContext[]) {
     );
 }
 
+function hasRecentTicketConfirmation(historial?: ChatbotMessageContext[]) {
+  return (historial || [])
+    .slice(-8)
+    .some((item) =>
+      item.author === 'assistant' &&
+      /cree el ticket con folio|creé el ticket con folio|envie la consulta a soporte|envié la consulta a soporte|ticket con folio/i.test(
+        item.text || ''
+      )
+    );
+}
+
+const MODULE_DETECTORS = [
+  {
+    module: 'Usuarios y permisos',
+    pattern: /usuario|usuarios|permiso|permisos|admin|administrador|invitacion|invitar/,
+  },
+  {
+    module: 'Incapacidades',
+    pattern: /incapacidad|incapacidades|imss|comprobante/,
+  },
+  {
+    module: 'Asistencia',
+    pattern: /asistencia|pendiente|pendientes|entrada|salida|checador/,
+  },
+  {
+    module: 'Credencial y documentos',
+    pattern: /credencial|documento|documentos|contrato|expediente|qr/,
+  },
+  {
+    module: 'Vacaciones',
+    pattern: /vacacion|vacaciones/,
+  },
+  {
+    module: 'Nomina',
+    pattern: /nomina|pago|recibo|salario|sueldo/,
+  },
+];
+
 function detectModuleFromText(value: string) {
-  if (/usuario|usuarios|permiso|permisos|admin|administrador|invitacion|invitar/.test(value)) {
-    return 'Usuarios y permisos';
-  }
+  return MODULE_DETECTORS.find((item) => item.pattern.test(value))?.module || 'Soporte';
+}
 
-  if (/incapacidad|incapacidades|imss|comprobante/.test(value)) {
-    return 'Incapacidades';
-  }
-
-  if (/asistencia|pendiente|entrada|salida|checador|qr/.test(value)) {
-    return 'Asistencia';
-  }
-
-  if (/credencial|documento|documentos|contrato|expediente/.test(value)) {
-    return 'Credencial y documentos';
-  }
-
-  if (/vacacion|vacaciones/.test(value)) {
-    return 'Vacaciones';
-  }
-
-  if (/nomina|pago|recibo|salario|sueldo/.test(value)) {
-    return 'Nomina';
-  }
-
-  return 'Soporte';
+function isTicketLifecycleMessage(value: string) {
+  return isTicketRequestMessage(value) || isAffirmativeMessage(value);
 }
 
 function summarizeConversationForTicket(
@@ -948,19 +1022,71 @@ function summarizeConversationForTicket(
     .filter((item) => item.author !== 'assistant')
     .map((item) => compactText(item.text))
     .filter(Boolean)
-    .slice(-4);
-  const joined = [...userMessages, compactText(message)]
+    .filter((item) => !isTicketLifecycleMessage(item))
+    .slice(-6);
+  const messageText = compactText(message);
+  const allMessages = [...userMessages, messageText]
+    .filter(Boolean)
+    .filter((item) => !isTicketLifecycleMessage(item));
+  const moduleHits = allMessages
+    .map((item) => ({
+      module: detectModuleFromText(item),
+      text: item,
+    }))
+    .filter((item) => item.module !== 'Soporte');
+  const latestModule = moduleHits[moduleHits.length - 1]?.module || 'Soporte';
+  const otherModules = Array.from(
+    new Set(moduleHits.map((item) => item.module).filter((item) => item !== latestModule))
+  );
+  const summaryMessages = (latestModule === 'Soporte'
+    ? allMessages
+    : moduleHits
+        .filter((item) => item.module === latestModule)
+        .map((item) => item.text)
+  ).slice(-3);
+  const joined = summaryMessages
     .filter(Boolean)
     .join(' | ');
-  const module = detectModuleFromText(joined);
   const channelLabel = channel === 'mobile' ? 'app movil' : 'portal web';
+  const ambiguityNote = otherModules.length
+    ? ` Tambien se hablaron antes otros temas (${otherModules.join(', ')}); uso el ultimo tema operativo para no mezclar el ticket.`
+    : '';
 
   return {
-    module,
+    module: latestModule,
     channelLabel,
     summary:
-      joined ||
-      'El usuario solicito seguimiento desde Max, pero no hay suficiente detalle operativo en el historial.',
+      `${joined || 'El usuario solicito seguimiento desde Max, pero no hay suficiente detalle operativo en el historial.'}${ambiguityNote}`,
+  };
+}
+
+function buildTicketAlreadyCreatedResponse(
+  role: ChatbotRole,
+  channel: ChatbotChannel
+): ChatbotResponse {
+  return {
+    asistente: ASSISTANT_NAME,
+    categoria: 'Soporte',
+    titulo: 'Ticket ya creado',
+    intent: 'ticket_contexto_ya_creado',
+    confianza: 'alta',
+    respuesta:
+      channel === 'mobile'
+        ? 'Ese ticket ya quedo creado con el contexto de la app movil. Si quieres revisar otro tema, seguimos en este chat o puedes iniciar uno nuevo.'
+        : 'Ese ticket ya quedo creado con el contexto del portal web. Si quieres revisar otro tema, seguimos en este chat o puedes iniciar uno nuevo.',
+    pasos: [
+      'El folio ya fue confirmado por Max en esta conversacion.',
+      'No creo otro ticket con el mismo contexto para evitar duplicados.',
+      'Para otro problema, inicia nuevo chat o cuentame el nuevo caso.',
+    ],
+    preguntas_seguimiento: [
+      'Quieres revisar otro tema?',
+      'Quieres iniciar un nuevo chat?',
+    ],
+    acciones: [],
+    sugerencias: getSuggestions(role),
+    requiere_escalamiento: false,
+    puede_crear_ticket: false,
   };
 }
 
@@ -1449,6 +1575,13 @@ export function responderChatbot(data: {
     throw new AppError('El mensaje es obligatorio', 400);
   }
 
+  if (
+    isAffirmativeMessage(mensaje) &&
+    hasRecentTicketConfirmation(data.historial)
+  ) {
+    return buildTicketAlreadyCreatedResponse(role, channel);
+  }
+
   const confirmsTicket =
     isAffirmativeMessage(mensaje) && hasRecentTicketOffer(data.historial);
 
@@ -1527,7 +1660,7 @@ export function responderChatbot(data: {
       channel,
       messageWithContext
     ),
-    pasos: adaptSteps(best.entry.pasos, channel),
+    pasos: buildOperationalSteps(best.entry, messageWithContext, channel),
     preguntas_seguimiento: adaptFollowUpQuestions(
       best.entry.preguntas_seguimiento,
       channel
