@@ -40,6 +40,13 @@ export function isAttendanceOperationalIntent(message: string) {
   );
 }
 
+export function isEmployeeAttendanceIntent(message: string) {
+  return (
+    has(message, /asistencia|asistencias|entrada|salida|qr|checador|jornada|historial/) &&
+    has(message, /mi|marcar|registrar|escanear|historial|entrada|salida|qr|camara|cámara|vencido|vencida/)
+  );
+}
+
 export function isCredentialOperationalIntent(message: string) {
   return (
     has(message, /credencial|documentos|contrato|expediente|qr/) &&
@@ -47,12 +54,45 @@ export function isCredentialOperationalIntent(message: string) {
   );
 }
 
+export function isVacationOperationalIntent(message: string) {
+  return (
+    has(message, /vacacion|vacaciones|descanso|dias disponibles|saldo/) &&
+    has(message, /como|donde|revis|solicit|crear|consult|saldo|aprobar|rechazar|estado|flujo/)
+  );
+}
+
+export function isPayrollOperationalIntent(message: string) {
+  return (
+    has(message, /nomina|nómina|pago|recibo|salario|sueldo|periodo/) &&
+    has(message, /como|donde|revis|consult|no aparece|falta|periodo|recibo|flujo/)
+  );
+}
+
+export function isCalendarOperationalIntent(message: string) {
+  return (
+    has(message, /calendario|agenda|mes|evento|eventos|dia|día/) &&
+    has(message, /como|donde|revis|consult|ver|filtrar|resumen|flujo/)
+  );
+}
+
+export function isTerminalOperationalIntent(message: string) {
+  return (
+    has(message, /terminal|terminal asistencia|autorizar terminal|codigo terminal|código terminal/) &&
+    has(message, /como|donde|autorizar|validar|revis|flujo|qr|codigo|código/)
+  );
+}
+
 export function resolveDirectEntryId(message: string) {
   if (isAdminInvitationIntent(message)) return 'usuarios-admin';
   if (isUserPermissionsIntent(message)) return 'usuarios-admin';
   if (isIncapacityOperationalIntent(message)) return 'incapacidades';
+  if (isTerminalOperationalIntent(message)) return 'terminal-admin';
+  if (isEmployeeAttendanceIntent(message)) return 'asistencia-empleado';
   if (isAttendanceOperationalIntent(message)) return 'asistencia-admin';
   if (isCredentialOperationalIntent(message)) return 'credencial';
+  if (isVacationOperationalIntent(message)) return 'vacaciones';
+  if (isPayrollOperationalIntent(message)) return 'nomina';
+  if (isCalendarOperationalIntent(message)) return 'calendario';
 
   return null;
 }
@@ -66,7 +106,7 @@ export function isOperationalFlowIntent(message: string) {
   );
   const moduleCue = has(
     message,
-    /usuario|usuarios|permiso|permisos|incapacidad|incapacidades|asistencia|credencial|contrato|documentos|vacaciones|nomina/
+    /usuario|usuarios|permiso|permisos|incapacidad|incapacidades|asistencia|credencial|contrato|documentos|vacaciones|nomina|nómina|calendario|terminal/
   );
 
   return processCue && moduleCue;

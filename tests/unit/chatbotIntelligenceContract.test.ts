@@ -97,6 +97,11 @@ describe('Max intelligence core', () => {
     ['¿Cómo cambio los permisos de un usuario sin afectar su cuenta?', 'Usuarios y permisos'],
     ['¿Cómo reviso si un empleado ya tiene contrato cargado?', 'Credencial y documentos'],
     ['¿Cómo puedo validar una credencial desde el portal?', 'Credencial y documentos'],
+    ['¿Cómo solicito vacaciones?', 'Vacaciones'],
+    ['¿Dónde reviso mi recibo de nomina?', 'Nomina'],
+    ['¿Cómo consulto el calendario laboral?', 'Calendario laboral'],
+    ['¿Cómo escaneo el QR para registrar mi asistencia?', 'Asistencia'],
+    ['¿Cómo autorizo una terminal de asistencia?', 'Terminal de asistencia'],
   ])(
     'prioriza proceso operativo antes de busqueda de empleado: %s',
     async (mensaje, categoria) => {
@@ -129,6 +134,43 @@ describe('Max intelligence core', () => {
     expect(response.intent).toBe('consulta_empleado');
     expect(response.respuesta).toMatch(/Brandon Bernal/i);
     expect(response.pasos.join(' ')).toMatch(/ID 21|brandon\\.bernal/i);
+    expect(mockedQuery.mock.calls[0][1]).toEqual(['%brandon bernal%']);
+  });
+
+  it('responde consulta enfocada de contrato de un empleado sin devolver expediente generico', async () => {
+    mockEmployeeData();
+
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      mensaje: 'Dame el contrato de Brandon Bernal',
+    });
+
+    const visibleText = [response.respuesta, ...response.pasos].join(' ');
+
+    expect(response.intent).toBe('consulta_empleado_contrato');
+    expect(response.titulo).toMatch(/Contrato de Brandon Bernal/i);
+    expect(visibleText).toMatch(/Contrato: Indeterminado|PDF/i);
+    expect(visibleText).not.toMatch(/Datos de contacto/i);
+    expect(mockedQuery.mock.calls[0][1]).toEqual(['%brandon bernal%']);
+  });
+
+  it('responde consulta enfocada de permisos de un empleado', async () => {
+    mockEmployeeData();
+
+    const response = await responderChatbotConDatos({
+      role: 'admin',
+      canal: 'web',
+      usuarioId: 1,
+      mensaje: 'Revisa permisos de Brandon Bernal',
+    });
+
+    const visibleText = [response.respuesta, ...response.pasos].join(' ');
+
+    expect(response.intent).toBe('consulta_empleado_permisos');
+    expect(visibleText).toMatch(/Modulos activos: usuarios/i);
+    expect(visibleText).toMatch(/evita recrear la cuenta/i);
     expect(mockedQuery.mock.calls[0][1]).toEqual(['%brandon bernal%']);
   });
 

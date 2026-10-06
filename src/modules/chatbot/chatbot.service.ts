@@ -777,7 +777,19 @@ function buildNaturalAnswer(
   }
 
   if (entry.id === 'asistencia-admin') {
-    return `Para pendientes de asistencia, revisa empleado, fecha, tipo de registro y evidencia. Despues decide si corresponde aprobar, rechazar o pedir correccion; no conviene cerrar el caso sin validar la jornada real.${moduleClosing}`;
+    if (/aprobar|rechazar|pendiente|pendientes/.test(message)) {
+      return `Para pendientes de asistencia, valida empleado, fecha, tipo de registro y evidencia antes de decidir. Aprueba solo registros consistentes con la jornada real; si falta evidencia, rechaza o pide correccion administrativa.${moduleClosing}`;
+    }
+
+    return `En asistencia administrativa, separa consulta de historial, pendientes y correcciones. Desde ${channelLabel}, empieza por identificar empleado, fecha y tipo de registro antes de aprobar o rechazar algo.${moduleClosing}`;
+  }
+
+  if (entry.id === 'asistencia-empleado') {
+    if (/qr|escanear|camara|cámara|vencido|vencida/.test(message)) {
+      return `Para registrar asistencia con QR desde ${channelLabel}, primero confirma permiso de camara, QR vigente y conexion. Si el QR vencio o no responde, no conviene insistir: genera o solicita un QR vigente y valida que la terminal este autorizada.${moduleClosing}`;
+    }
+
+    return `Para revisar asistencia como empleado, consulta primero el historial del dia: entrada, salida, estado y jornada. Si falta un registro, el siguiente paso es revisar si quedo pendiente para validacion administrativa.${moduleClosing}`;
   }
 
   if (entry.id === 'credencial') {
@@ -785,7 +797,39 @@ function buildNaturalAnswer(
       return `Para validar una credencial desde ${channelLabel}, usa el verificador administrativo de QR, confirma que el usuario este activo y revisa vigencia. Si marca vencida o invalida, el siguiente paso es renovar credencial o revisar estado del empleado.${moduleClosing}`;
     }
 
-    return `Para credencial, contrato o documentos, primero identifica si quieres consultar un documento propio, revisar si ya esta cargado o validar un QR administrativo. Desde ${channelLabel} el flujo cambia segun rol y permiso disponible.${moduleClosing}`;
+    if (/contrato|cargado|pdf/.test(message)) {
+      return `Para revisar contrato cargado desde ${channelLabel}, abre Documentos o el expediente del empleado, valida que exista PDF de contrato, estado vigente y coincidencia con el usuario correcto. Si no aparece, revisa si el contrato fue generado pero no asociado al expediente.${moduleClosing}`;
+    }
+
+    return `Para credencial, contrato o documentos, primero define si quieres consultar expediente, revisar contrato PDF o validar QR. Max debe guiarte por el flujo visible y no exponer detalles tecnicos internos.${moduleClosing}`;
+  }
+
+  if (entry.id === 'vacaciones') {
+    if (/saldo|dias disponibles|disponibles/.test(message)) {
+      return `Para revisar vacaciones, empieza por el saldo disponible y despues valida solicitudes recientes. Si el saldo no cuadra, compara periodos aprobados, dias solicitados y eventos reflejados en calendario.${moduleClosing}`;
+    }
+
+    if (/solicit|crear|pedir/.test(message)) {
+      return `Para solicitar vacaciones desde ${channelLabel}, revisa saldo, captura fechas, valida cruces con incapacidades u otros periodos y envia la solicitud. Despues da seguimiento al estado para saber si quedo pendiente, aprobada o rechazada.${moduleClosing}`;
+    }
+
+    return `Vacaciones se revisa en tres capas: saldo disponible, solicitudes por estado y cruces en calendario laboral. Ese orden evita aprobar o diagnosticar con datos incompletos.${moduleClosing}`;
+  }
+
+  if (entry.id === 'nomina') {
+    if (/no aparece|falta|no veo|recibo/.test(message)) {
+      return `Si falta un recibo de nomina, revisa primero periodo, permiso del usuario y si el registro ya fue cargado administrativamente. Para reportarlo, conviene indicar empleado, periodo y fecha de pago esperada.${moduleClosing}`;
+    }
+
+    return `Para consultar nomina desde ${channelLabel}, abre el modulo, selecciona periodo y revisa estado, total y recibo disponible. Si el usuario no ve nomina, normalmente se valida permiso, periodo cargado o datos administrativos pendientes.${moduleClosing}`;
+  }
+
+  if (entry.id === 'calendario') {
+    return `El calendario laboral sirve como vista consolidada: asistencia, vacaciones e incapacidades por mes y dia. Si algo no aparece ahi, el diagnostico correcto es revisar el modulo origen y confirmar que el evento este aprobado o registrado en el periodo correcto.${moduleClosing}`;
+  }
+
+  if (entry.id === 'terminal-admin') {
+    return `La terminal de asistencia es un flujo controlado para registrar QR desde un dispositivo autorizado. No se mezcla con asistencia movil del empleado ni con verificacion de credenciales; primero valida codigo, dispositivo y sesion autorizada.${moduleClosing}`;
   }
 
   const intro = isProblem
@@ -837,12 +881,75 @@ function buildOperationalSteps(
     ], channel);
   }
 
+  if (entry.id === 'asistencia-admin') {
+    return adaptSteps([
+      'Abre Pendientes de asistencia o el modulo de Asistencia administrativa.',
+      'Filtra por empleado, fecha o estado pendiente.',
+      'Valida tipo de registro, evidencia y consistencia con la jornada.',
+      'Aprueba, rechaza o solicita correccion dejando criterio administrativo.',
+    ], channel);
+  }
+
+  if (entry.id === 'asistencia-empleado' && /qr|escanear|camara|cámara|vencido|vencida/.test(message)) {
+    return adaptSteps([
+      'Abre Mi asistencia y confirma permiso de camara.',
+      'Escanea un QR vigente y con buena iluminacion.',
+      'Verifica que el registro del dia se actualice como entrada o salida.',
+      'Si el QR vencio o no responde, solicita uno nuevo o valida terminal autorizada.',
+    ], channel);
+  }
+
   if (entry.id === 'credencial' && /validar|verificar|qr/.test(message)) {
     return adaptSteps([
       'Abre el verificador de credencial QR desde herramientas administrativas.',
       'Escanea o captura el QR de la credencial del empleado.',
       'Valida nombre, estado del usuario, vigencia y coincidencia con contrato activo.',
       'Si aparece vencida o invalida, solicita renovacion antes de aceptarla.',
+    ], channel);
+  }
+
+  if (entry.id === 'credencial' && /contrato|cargado|pdf/.test(message)) {
+    return adaptSteps([
+      'Abre Documentos o el expediente del empleado.',
+      'Revisa si existe contrato PDF asociado al usuario.',
+      'Confirma estado del contrato, vigencia y coincidencia con el empleado correcto.',
+      'Si no aparece, valida si fue generado pero no asociado al expediente.',
+    ], channel);
+  }
+
+  if (entry.id === 'vacaciones') {
+    return adaptSteps([
+      'Abre Vacaciones y revisa dias disponibles.',
+      'Consulta solicitudes recientes y su estado.',
+      'Valida que no haya cruce con incapacidades u otros periodos.',
+      'Si el saldo no cuadra, compara el calendario laboral y solicitudes aprobadas.',
+    ], channel);
+  }
+
+  if (entry.id === 'nomina') {
+    return adaptSteps([
+      'Abre Nomina y selecciona el periodo correcto.',
+      'Revisa estado, total y recibo disponible.',
+      'Confirma que el usuario tenga permiso de nomina activo.',
+      'Si falta un periodo, reporta empleado, periodo y fecha de pago esperada.',
+    ], channel);
+  }
+
+  if (entry.id === 'calendario') {
+    return adaptSteps([
+      'Abre Calendario laboral.',
+      'Selecciona mes y dia a revisar.',
+      'Identifica si el evento viene de asistencia, vacaciones o incapacidades.',
+      'Si falta informacion, revisa el modulo origen y el estado del evento.',
+    ], channel);
+  }
+
+  if (entry.id === 'terminal-admin') {
+    return adaptSteps([
+      'Abre Autorizar Terminal desde el portal administrativo.',
+      'Valida codigo, dispositivo y sesion de la terminal.',
+      'Autoriza solo equipos controlados por la empresa.',
+      'Si no carga, revisa conexion, sesion y codigo vigente.',
     ], channel);
   }
 
@@ -1001,7 +1108,15 @@ const MODULE_DETECTORS = [
   },
   {
     module: 'Nomina',
-    pattern: /nomina|pago|recibo|salario|sueldo/,
+    pattern: /nomina|nómina|pago|recibo|salario|sueldo/,
+  },
+  {
+    module: 'Calendario laboral',
+    pattern: /calendario|agenda|evento|eventos|mes|dia|día/,
+  },
+  {
+    module: 'Terminal de asistencia',
+    pattern: /terminal|autorizar terminal|codigo terminal|código terminal/,
   },
 ];
 
@@ -1355,6 +1470,26 @@ function buildAmbiguousEmployeeResponse(
   };
 }
 
+type EmployeeDataFocus =
+  | 'general'
+  | 'contrato'
+  | 'nomina'
+  | 'vacaciones'
+  | 'asistencia'
+  | 'incapacidades'
+  | 'permisos';
+
+function detectEmployeeDataFocus(message: string): EmployeeDataFocus {
+  if (/contrato|contratos|pdf|documento laboral/.test(message)) return 'contrato';
+  if (/nomina|nómina|recibo|pago|salario|sueldo/.test(message)) return 'nomina';
+  if (/vacacion|vacaciones|dias disponibles|saldo/.test(message)) return 'vacaciones';
+  if (/asistencia|entrada|salida|jornada|checador/.test(message)) return 'asistencia';
+  if (/incapacidad|incapacidades|imss|comprobante/.test(message)) return 'incapacidades';
+  if (/permiso|permisos|modulo|modulos|rol|roles/.test(message)) return 'permisos';
+
+  return 'general';
+}
+
 function buildEmployeeResponse(
   role: ChatbotRole,
   channel: ChatbotChannel,
@@ -1366,20 +1501,210 @@ function buildEmployeeResponse(
     vacaciones: any[];
     asistencias: any[];
     incapacidades: any[];
-  }
+  },
+  messageWithContext: string
 ): ChatbotResponse {
   const nombreCompleto = `${safeText(user.nombre)} ${safeText(user.apellido, '')}`.trim();
   const contrato = data.contratos[0];
   const nomina = data.nominas[0];
+  const focus = detectEmployeeDataFocus(messageWithContext);
   const permisosActivos = data.permisos
     .filter((item) => Number(item.habilitado) === 1)
     .map((item) => item.modulo);
   const permisosInactivos = data.permisos
     .filter((item) => Number(item.habilitado) !== 1)
     .map((item) => item.modulo);
+  const commonActions =
+    role === 'admin'
+      ? [
+          {
+            label: 'Usuarios en portal',
+            target: '/portal/usuarios',
+            scope: 'web' as const,
+          },
+          {
+            label: 'Usuarios y permisos',
+            target: 'AdminUsuarios',
+            scope: 'mobile' as const,
+          },
+        ]
+      : [];
+  const baseEmployeeLine = `Empleado: ${nombreCompleto} · ID ${user.id} · correo ${safeText(user.correo)}.`;
+
+  if (focus === 'contrato') {
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Datos de empleado',
+      titulo: `Contrato de ${nombreCompleto}`,
+      intent: 'consulta_empleado_contrato',
+      confianza: 'alta',
+      respuesta:
+        contrato
+          ? `Encontre contrato registrado para ${nombreCompleto}. Te dejo el estado permitido para tu sesion desde ${channel === 'mobile' ? 'la app movil' : 'el portal web'}.`
+          : `No encontre contrato registrado para ${nombreCompleto} en los datos disponibles para tu sesion.`,
+      pasos: [
+        baseEmployeeLine,
+        contrato
+          ? `Contrato: ${safeText(contrato.tipo_contrato)} · estado ${safeText(contrato.estado)} · salario ${formatMoney(contrato.salario_base)} · vigencia ${formatDate(contrato.fecha_inicio)} a ${formatDate(contrato.fecha_fin)}.`
+          : 'Contrato: no hay contrato registrado.',
+        contrato?.contrato_pdf_url
+          ? 'PDF: existe archivo de contrato asociado al expediente.'
+          : 'PDF: no hay archivo de contrato asociado o no esta disponible.',
+        'Si el contrato deberia existir, revisa Documentos o solicita regenerar/asociar el PDF al expediente correcto.',
+      ],
+      preguntas_seguimiento: [
+        'Quieres revisar documentos del empleado?',
+        'Quieres revisar permisos o estado del usuario?',
+      ],
+      acciones: commonActions,
+      sugerencias: ['Documentos', 'Permisos', 'Incapacidades'],
+      requiere_escalamiento: false,
+      puede_crear_ticket: false,
+    };
+  }
+
+  if (focus === 'incapacidades') {
+    const incapacidadLines = data.incapacidades.length
+      ? data.incapacidades.map((item) =>
+          `#${item.id}: ${safeText(item.estado)} · ${formatDate(item.fecha_inicio)} a ${formatDate(item.fecha_fin)} · ${item.dias_calculados} dia(s) · motivo ${safeText(item.motivo)}.`
+        )
+      : ['No hay incapacidades recientes registradas para este empleado.'];
+
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Datos de empleado',
+      titulo: `Incapacidades de ${nombreCompleto}`,
+      intent: 'consulta_empleado_incapacidades',
+      confianza: 'alta',
+      respuesta:
+        `Revise incapacidades recientes de ${nombreCompleto}. Si vas a aprobar o rechazar, usa estos datos solo como contexto y valida el comprobante antes de decidir.`,
+      pasos: [baseEmployeeLine, ...incapacidadLines],
+      preguntas_seguimiento: [
+        'Quieres revisar el flujo para aprobar o rechazar?',
+        'Quieres buscar otra incapacidad por folio?',
+      ],
+      acciones: commonActions,
+      sugerencias: ['Aprobar incapacidad', 'Contrato', 'Asistencia'],
+      requiere_escalamiento: false,
+      puede_crear_ticket: false,
+    };
+  }
+
+  if (focus === 'asistencia') {
+    const attendanceLines = data.asistencias.length
+      ? data.asistencias.map((item) =>
+          `${formatDate(item.fecha)} · ${safeText(item.estado)} · entrada ${safeText(item.hora_entrada, 'N/A')} · salida ${safeText(item.hora_salida, 'N/A')}.`
+        )
+      : ['No hay registros recientes de asistencia para este empleado.'];
+
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Datos de empleado',
+      titulo: `Asistencia de ${nombreCompleto}`,
+      intent: 'consulta_empleado_asistencia',
+      confianza: 'alta',
+      respuesta:
+        `Revise asistencia reciente de ${nombreCompleto}. Si hay un pendiente, conviene validar fecha, tipo de registro y evidencia antes de aprobar o rechazar.`,
+      pasos: [baseEmployeeLine, ...attendanceLines],
+      preguntas_seguimiento: [
+        'Quieres revisar pendientes de asistencia?',
+        'Quieres consultar contrato o permisos del empleado?',
+      ],
+      acciones: commonActions,
+      sugerencias: ['Pendientes', 'Contrato', 'Permisos'],
+      requiere_escalamiento: false,
+      puede_crear_ticket: false,
+    };
+  }
+
+  if (focus === 'vacaciones') {
+    const vacationLines = data.vacaciones.length
+      ? data.vacaciones.map((item) =>
+          `#${item.id}: ${safeText(item.estado)} · ${formatDate(item.fecha_inicio)} a ${formatDate(item.fecha_fin)} · ${item.dias_solicitados} dia(s).`
+        )
+      : ['No hay solicitudes recientes de vacaciones para este empleado.'];
+
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Datos de empleado',
+      titulo: `Vacaciones de ${nombreCompleto}`,
+      intent: 'consulta_empleado_vacaciones',
+      confianza: 'alta',
+      respuesta:
+        `Revise vacaciones de ${nombreCompleto}. El saldo visible es ${Number(user.dias_vacaciones_disponibles ?? 0)} dia(s); valida solicitudes aprobadas si el saldo no coincide.`,
+      pasos: [baseEmployeeLine, ...vacationLines],
+      preguntas_seguimiento: [
+        'Quieres revisar calendario laboral?',
+        'Quieres consultar incapacidades para descartar cruces?',
+      ],
+      acciones: commonActions,
+      sugerencias: ['Calendario', 'Incapacidades', 'Asistencia'],
+      requiere_escalamiento: false,
+      puede_crear_ticket: false,
+    };
+  }
+
+  if (focus === 'nomina') {
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Datos de empleado',
+      titulo: `Nomina de ${nombreCompleto}`,
+      intent: 'consulta_empleado_nomina',
+      confianza: 'alta',
+      respuesta:
+        nomina
+          ? `Encontre nomina reciente de ${nombreCompleto}. Te muestro el resumen permitido por tu sesion.`
+          : `No encontre nomina reciente para ${nombreCompleto} en los datos disponibles para tu sesion.`,
+      pasos: [
+        baseEmployeeLine,
+        nomina
+          ? `Ultima nomina: periodo ${formatDate(nomina.periodo_inicio)} a ${formatDate(nomina.periodo_fin)} · estado ${safeText(nomina.estado)} · total ${formatMoney(nomina.total)}.`
+          : 'Nomina: no hay registros recientes.',
+        'Si falta un periodo, reporta periodo esperado, fecha de pago y empleado.',
+      ],
+      preguntas_seguimiento: [
+        'Quieres revisar permisos de nomina?',
+        'Quieres revisar contrato para comparar salario base?',
+      ],
+      acciones: commonActions,
+      sugerencias: ['Contrato', 'Permisos', 'Nomina'],
+      requiere_escalamiento: false,
+      puede_crear_ticket: false,
+    };
+  }
+
+  if (focus === 'permisos') {
+    return {
+      asistente: ASSISTANT_NAME,
+      categoria: 'Datos de empleado',
+      titulo: `Permisos de ${nombreCompleto}`,
+      intent: 'consulta_empleado_permisos',
+      confianza: 'alta',
+      respuesta:
+        `Revise rol y modulos de ${nombreCompleto}. Para modificar permisos, cambia solo los modulos necesarios y evita recrear la cuenta.`,
+      pasos: [
+        baseEmployeeLine,
+        `Rol: ${safeText(user.role)} · estado: ${Number(user.activo) === 1 ? 'activo' : 'inactivo'}.`,
+        permisosActivos.length
+          ? `Modulos activos: ${permisosActivos.join(', ')}.`
+          : 'Modulos activos: no hay permisos activos registrados.',
+        permisosInactivos.length
+          ? `Modulos desactivados: ${permisosInactivos.join(', ')}.`
+          : 'Modulos desactivados: sin bloqueos registrados por modulo.',
+      ],
+      preguntas_seguimiento: [
+        'Quieres cambiar rol o solo modulos?',
+        'Quieres revisar el flujo para modificar permisos sin afectar la cuenta?',
+      ],
+      acciones: commonActions,
+      sugerencias: ['Cambiar permisos', 'Contrato', 'Asistencia'],
+      requiere_escalamiento: false,
+      puede_crear_ticket: false,
+    };
+  }
 
   const pasos = [
-    `Empleado: ${nombreCompleto} · ID ${user.id} · correo ${safeText(user.correo)}.`,
+    baseEmployeeLine,
     `Rol: ${safeText(user.role)} · estado: ${Number(user.activo) === 1 ? 'activo' : 'inactivo'} · ingreso: ${formatDate(user.fecha_ingreso)}.`,
     'Datos de contacto: ocultos por privacidad en el resumen general.',
     `Vacaciones disponibles: ${Number(user.dias_vacaciones_disponibles ?? 0)} dia(s).`,
@@ -1438,21 +1763,7 @@ function buildEmployeeResponse(
         ? 'Quieres abrir Usuarios y permisos para ajustar rol o modulos?'
         : 'Quieres que revise algun dato de tu propio perfil?',
     ],
-    acciones:
-      role === 'admin'
-        ? [
-            {
-              label: 'Usuarios en portal',
-              target: '/portal/usuarios',
-              scope: 'web',
-            },
-            {
-              label: 'Usuarios y permisos',
-              target: 'AdminUsuarios',
-              scope: 'mobile',
-            },
-          ]
-        : [],
+    acciones: commonActions,
     sugerencias: [
       'Contrato',
       'Nomina',
@@ -1548,7 +1859,13 @@ async function buildEmployeeDataResponse(
   const [user] = candidates;
   const operationalData = await getEmployeeOperationalData(Number(user.id));
 
-  return buildEmployeeResponse(role, channel, user, operationalData);
+  return buildEmployeeResponse(
+    role,
+    channel,
+    user,
+    operationalData,
+    messageWithContext
+  );
 }
 
 export function obtenerSugerenciasChatbot(role?: string | null) {

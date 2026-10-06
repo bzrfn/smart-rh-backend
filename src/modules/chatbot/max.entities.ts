@@ -86,8 +86,17 @@ export function extractEmployeeLookup(rawMessage: string): EmployeeLookup | null
   const idMatch = normalized.match(/(?:empleado|usuario|colaborador|trabajador|id)\s*#?\s*(\d+)/i);
   if (idMatch) return { id: Number(idMatch[1]) };
 
+  const dataOwnerName = normalized.match(
+    /(?:contrato|contratos|nomina|vacaciones|asistencia|incapacidad|incapacidades|permisos|expediente|perfil)\s+(?:de|del|para)\s+([a-zñ.'-]+(?:\s+[a-zñ.'-]+){1,3})/i
+  );
+
+  if (dataOwnerName) {
+    const nombre = dataOwnerName[1].replace(/\s+/g, ' ').trim();
+    if (isLikelyName(nombre)) return { nombre };
+  }
+
   const explicitSearchName = normalized.match(
-    /(?:busca|buscar|buscame|encuentra|localiza|consulta|consultar|muestra|mostrar)\s+(?:a\s+)?([a-zñ.'-]+(?:\s+[a-zñ.'-]+){1,3})/i
+    /(?:busca|buscar|buscame|encuentra|localiza|consulta|consultar|muestra|mostrar|dame|revisa|revisar)\s+(?:a\s+)?([a-zñ.'-]+(?:\s+[a-zñ.'-]+){1,3})/i
   );
 
   if (explicitSearchName) {

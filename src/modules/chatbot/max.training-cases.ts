@@ -44,4 +44,34 @@ export const MAX_TRAINING_CASES = [
     expectedCategory: 'Usuarios y permisos',
     shouldQueryEmployeeData: false,
   },
+  {
+    prompt: 'Dame el contrato de Brandon Bernal',
+    expectedCategory: 'Datos de empleado',
+    shouldQueryEmployeeData: true,
+  },
+  {
+    prompt: 'Revisa permisos de Brandon Bernal',
+    expectedCategory: 'Datos de empleado',
+    shouldQueryEmployeeData: true,
+  },
+  {
+    prompt: '¿Cómo solicito vacaciones?',
+    expectedCategory: 'Vacaciones',
+    shouldQueryEmployeeData: false,
+  },
+  {
+    prompt: '¿Dónde reviso mi recibo de nomina?',
+    expectedCategory: 'Nomina',
+    shouldQueryEmployeeData: false,
+  },
+  {
+    prompt: '¿Cómo consulto el calendario laboral?',
+    expectedCategory: 'Calendario laboral',
+    shouldQueryEmployeeData: false,
+  },
+  {
+    prompt: '¿Cómo escaneo el QR para registrar mi asistencia?',
+    expectedCategory: 'Asistencia',
+    shouldQueryEmployeeData: false,
+  },
 ];

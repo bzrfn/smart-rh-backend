@@ -9,6 +9,9 @@ import {
 import {
   MAX_TRAINING_CASES,
 } from '../../src/modules/chatbot/max.training-cases.js';
+import {
+  MAX_PROJECT_FLOWS,
+} from '../../src/modules/chatbot/max.project-flows.js';
 
 describe('Max modular intelligence architecture', () => {
   const chatbotDir = path.join(process.cwd(), 'src/modules/chatbot');
@@ -47,6 +50,25 @@ describe('Max modular intelligence architecture', () => {
     expect(prompts).toMatch(/incapacidades/i);
     expect(prompts).toMatch(/asistencia/i);
     expect(prompts).toMatch(/Brandon Bernal|id 21/i);
+  });
+
+  it('mantiene catalogo operativo amplio para Max v6', () => {
+    const flowIds = MAX_PROJECT_FLOWS.map((flow) => flow.id);
+
+    expect(MAX_PROJECT_FLOWS.length).toBeGreaterThanOrEqual(10);
+    expect(flowIds).toEqual(
+      expect.arrayContaining([
+        'usuarios-admin',
+        'incapacidades',
+        'asistencia-admin',
+        'asistencia-empleado',
+        'credencial',
+        'vacaciones',
+        'nomina',
+        'calendario',
+        'terminal-admin',
+      ])
+    );
   });
 
   it('permite confirmar ticket desde continuidad conversacional', () => {

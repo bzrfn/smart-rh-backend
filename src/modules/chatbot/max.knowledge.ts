@@ -11,6 +11,10 @@ export const PROJECT_SAFE_OPERATIONAL_LINES = [
   'Incapacidades permite registro por empleado, comprobante PDF, analisis/validacion, revision admin, aprobacion, rechazo e historial de revisiones.',
   'Calendario laboral consolida asistencia, vacaciones e incapacidades para consultar eventos por mes y dia.',
   'Documentos maneja contrato PDF, foto de perfil y credencial digital con QR y verificacion administrativa.',
+  'Vacaciones permite consultar saldo, crear solicitudes, revisar estados y validar cruces con incapacidades u otros periodos.',
+  'Nomina permite consultar periodos, recibos y pagos visibles segun permisos del usuario.',
+  'Terminal de asistencia se autoriza desde flujo administrativo controlado y no debe mezclarse con asistencia movil del empleado.',
+  'Soporte debe ser una ultima salida: Max primero diagnostica, despues resume contexto y solo crea ticket cuando el usuario confirma.',
   'ETL, ML, KMeans y Analytics generan analisis administrativos y metricas internas; Max solo debe traducirlos a orientacion funcional segura.',
   'Max debe usar el canal recibido: web significa portal; mobile significa app movil. No debe preguntar de nuevo si fue portal o app cuando el canal ya viene en la peticion.',
 ];
