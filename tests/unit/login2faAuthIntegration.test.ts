@@ -152,6 +152,83 @@ describe(
 
 
     test(
+      'cuentas de revision usan bypass 2FA solo por allowlist',
+      () => {
+        expect(
+          service
+        ).toContain(
+          'isAppReview2faBypassAccount'
+        );
+
+        expect(
+          service
+        ).toContain(
+          'completeAppReviewLoginWithout2fa'
+        );
+
+        expect(
+          service
+        ).toContain(
+          'env.login2fa.appReviewBypassEmails'
+        );
+
+        expect(
+          service
+        ).toContain(
+          'signJwt({'
+        );
+      }
+    );
+
+
+    test(
+      'bypass de revision no aplica antes de password ni email verificado',
+      () => {
+        const loginStart =
+          service.indexOf(
+            'export async function login'
+          );
+
+        const passwordCheck =
+          service.indexOf(
+            'const ok = await verifyPassword',
+            loginStart
+          );
+
+        const emailVerificationCheck =
+          service.indexOf(
+            'if (!u.email_verificado)',
+            passwordCheck
+          );
+
+        const appReviewReturn =
+          service.indexOf(
+            'return completeAppReviewLoginWithout2fa',
+            emailVerificationCheck
+          );
+
+        expect(
+          passwordCheck
+        ).toBeGreaterThan(
+          loginStart
+        );
+
+        expect(
+          emailVerificationCheck
+        ).toBeGreaterThan(
+          passwordCheck
+        );
+
+        expect(
+          appReviewReturn
+        ).toBeGreaterThan(
+          emailVerificationCheck
+        );
+      }
+    );
+
+
+    test(
       'legacy email LOGIN_2FA ya no participa en login ni verify',
       () => {
         const start =

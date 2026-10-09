@@ -12,6 +12,7 @@ import {
 import { verifyPassword, hashPassword } from '../../utils/password.js';
 import { AppError } from '../../utils/AppError.js';
 import { env } from '../../config/env.js';
+import { signJwt } from '../../config/jwt.js';
 import {
   completePasswordRecovery,
   requestPasswordRecovery,
@@ -56,6 +57,35 @@ function buildUserResponse(u: any) {
 
 function getFullName(u: any) {
   return `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.correo;
+}
+
+function getAppReviewBypassEmails() {
+  return new Set(
+    String(
+      env.login2fa.appReviewBypassEmails ||
+      ''
+    )
+      .split(',')
+      .map((email) =>
+        email
+          .trim()
+          .toLowerCase()
+      )
+      .filter(Boolean)
+  );
+}
+
+function isAppReview2faBypassAccount(correo: string) {
+  const normalizedEmail =
+    String(correo || '')
+      .trim()
+      .toLowerCase();
+
+  return (
+    normalizedEmail.length > 0 &&
+    getAppReviewBypassEmails()
+      .has(normalizedEmail)
+  );
 }
 
 async function registrarLoginExitoso(
@@ -110,6 +140,36 @@ async function registrarLoginExitoso(
       twoFactor,
     },
   });
+}
+
+async function completeAppReviewLoginWithout2fa(
+  u: any
+) {
+  await registrarLoginExitoso(
+    u,
+    false
+  );
+
+  return {
+    token:
+      signJwt({
+        userId:
+          u.id,
+
+        role:
+          u.rol_nombre,
+
+        sessionVersion:
+          Number(
+            u.session_version
+          ),
+      }),
+
+    user:
+      buildUserResponse(
+        u
+      ),
+  };
 }
 
 
@@ -178,6 +238,11 @@ export async function login(
       .toLowerCase() ===
     'admin';
 
+  const isAppReviewAccount =
+    isAppReview2faBypassAccount(
+      u.correo
+    );
+
 
   if (
     adminAccess &&
@@ -220,14 +285,17 @@ export async function login(
      * Son identidades distintas por diseño.
      */
     if (
-      !adminAccess ||
-      !Number.isInteger(
-        sponsorId
-      ) ||
-      sponsorId <= 0 ||
-      !approverEmail ||
-      sponsorEmail !==
-        approverEmail
+      !isAppReviewAccount &&
+      (
+        !adminAccess ||
+        !Number.isInteger(
+          sponsorId
+        ) ||
+        sponsorId <= 0 ||
+        !approverEmail ||
+        sponsorEmail !==
+          approverEmail
+      )
     ) {
       /*
        * Respuesta genérica:
@@ -293,6 +361,12 @@ export async function login(
       expiresInMinutes: registroCodigo.expiresInMinutes,
       message: 'Tu cuenta aún no está verificada. Te enviamos un código de confirmación al correo.',
     };
+  }
+
+  if (isAppReviewAccount) {
+    return completeAppReviewLoginWithout2fa(
+      u
+    );
   }
 
   const normalizedRole =

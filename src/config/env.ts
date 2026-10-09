@@ -167,6 +167,10 @@ export const env = {
     hmacSecret:
       process.env.LOGIN_2FA_HMAC_SECRET ||
       '',
+
+    appReviewBypassEmails:
+      process.env.APP_REVIEW_2FA_BYPASS_EMAILS ||
+      '',
   },
 
 
