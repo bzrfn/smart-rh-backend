@@ -8,11 +8,36 @@ import {
 import {
   addUser,
   deleteUser,
+  editOwnProfile,
   editUser,
   getUsers,
   toggleUser,
   updateUserVacationDays,
 } from './users.service.js';
+
+export async function updateOwnProfileController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const user = await editOwnProfile(
+      (req as any).auth?.userId,
+      {
+        telefono: req.body?.telefono,
+        direccion: req.body?.direccion,
+      }
+    );
+
+    res.json({
+      ok: true,
+      message: 'Perfil actualizado correctamente',
+      user,
+    });
+  } catch (e) {
+    next(e);
+  }
+}
 
 export async function listUsersController(_req: Request, res: Response, next: NextFunction) {
   try {

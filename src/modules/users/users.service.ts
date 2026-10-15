@@ -9,6 +9,7 @@ import {
 import {
   createUser,
   findRoleNameById,
+  findOwnProfileById,
   findUserById,
   listUsers,
   roleExists,
@@ -17,6 +18,7 @@ import {
   setUserVacationDays,
   softDeleteUserWithAdminLock,
   updateUser,
+  updateOwnProfile,
   updateUserWithAdminLock,
 } from './users.repository.js';
 
@@ -28,6 +30,7 @@ import {
 import {
   validateActiveValue,
   validateCreateUserPayload,
+  validateOwnProfilePayload,
   validateUpdateUserPayload,
   validateUserId,
   validateVacationDays,
@@ -35,6 +38,33 @@ import {
 
 export const getUsers =
   () => listUsers();
+
+export async function editOwnProfile(
+  rawId: unknown,
+  payload: unknown
+) {
+  const id = validateUserId(rawId);
+  const data = validateOwnProfilePayload(payload);
+
+  const exists = await findUserById(id);
+
+  if (!exists) {
+    throw new AppError('Usuario no encontrado', 404);
+  }
+
+  await updateOwnProfile(id, data);
+
+  const user = await findOwnProfileById(id);
+
+  if (!user) {
+    throw new AppError('Usuario no encontrado', 404);
+  }
+
+  return {
+    ...user,
+    email_verificado: Boolean(user.email_verificado),
+  };
+}
 
 async function ensureRoleExists(
   roleId: number

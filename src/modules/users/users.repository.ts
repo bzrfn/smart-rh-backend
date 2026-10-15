@@ -59,6 +59,52 @@ export async function findUserById(
   )[0] || null;
 }
 
+export async function findOwnProfileById(
+  id: number
+) {
+  const [rows] = await pool.query(
+    `SELECT
+       u.id,
+       u.nombre,
+       u.apellido,
+       u.correo,
+       r.nombre AS role,
+       u.telefono,
+       u.direccion,
+       u.fecha_ingreso,
+       u.dias_vacaciones_disponibles,
+       u.foto_perfil_url,
+       u.credencial_url,
+       u.email_verificado
+     FROM usuarios u
+     JOIN roles r ON r.id = u.rol_id
+     WHERE u.id = ?
+       AND u.activo = 1
+     LIMIT 1`,
+    [id]
+  );
+
+  return (rows as any[])[0] || null;
+}
+
+export async function updateOwnProfile(
+  id: number,
+  p: {
+    telefono: string | null;
+    direccion: string | null;
+  }
+) {
+  await pool.query(
+    `UPDATE usuarios
+     SET telefono = ?,
+         direccion = ?,
+         updated_at = NOW()
+     WHERE id = ?
+       AND activo = 1`,
+    [p.telefono, p.direccion, id]
+  );
+}
+
 export async function findUserAccessState(
   id: number
 ): Promise<UserAccessState | null> {

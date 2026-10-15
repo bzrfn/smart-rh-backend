@@ -18,6 +18,11 @@ export type ValidatedCreateUserPayload =
     contrasena: string;
   };
 
+export type ValidatedOwnProfilePayload = {
+  telefono: string | null;
+  direccion: string | null;
+};
+
 function asObject(
   payload: unknown
 ): Record<string, unknown> {
@@ -413,3 +418,22 @@ export function validateUpdateUserPayload(
     payload
   );
 }
+export function validateOwnProfilePayload(
+  payload: unknown
+): ValidatedOwnProfilePayload {
+  const data = asObject(payload);
+
+  return {
+    telefono: optionalText(
+      data.telefono,
+      'Teléfono',
+      30
+    ),
+    direccion: optionalText(
+      data.direccion,
+      'Dirección',
+      500
+    ),
+  };
+}
+

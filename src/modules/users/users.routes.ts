@@ -7,10 +7,13 @@ import {
   listUsersController,
   setActiveController,
   setVacationDaysController,
+  updateOwnProfileController,
   updateUserController,
 } from './users.controller.js';
 
 export const userRoutes = Router();
+
+userRoutes.patch('/me', authJwt, updateOwnProfileController);
 
 userRoutes.get('/', authJwt, requireRole('admin'), listUsersController);
 userRoutes.post('/', authJwt, requireRole('admin'), createUserController);
