@@ -171,9 +171,9 @@ describe(
         );
 
         expect(
-          service
+          service.replace(/\s+/g, ' ')
         ).toContain(
-          'sponsorEmail !==\n        approverEmail'
+          'sponsorEmail !== approverEmail'
         );
       }
     );
