@@ -155,7 +155,7 @@ export async function generateDynamicQr() {
   // ==========================================================
   // VALIDEZ
   //
-  // El QR solamente puede utilizarse durante 10 segundos.
+  // El QR solamente puede utilizarse durante 20 segundos.
   // ==========================================================
 
   const validUntil =

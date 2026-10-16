@@ -192,7 +192,7 @@ export const env = {
     validitySeconds:
       Number(
         process.env.QR_VALIDITY_SECONDS ||
-        10
+        20
       ),
 
     retentionMinutes:
