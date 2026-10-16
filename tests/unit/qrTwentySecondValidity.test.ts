@@ -8,8 +8,9 @@ describe('QR dinámico con vigencia de 20 segundos', () => {
   );
 
   test('usa 20 segundos como valor predeterminado', () => {
-    expect(envSource).toMatch(
-      /process\.env\.QR_VALIDITY_SECONDS\s*\|\|\s*20/
+    expect(envSource).toMatch(/validitySeconds:\s*20/);
+    expect(envSource).not.toMatch(
+      /validitySeconds:[\s\S]{0,120}process\.env\.QR_VALIDITY_SECONDS/
     );
   });
 

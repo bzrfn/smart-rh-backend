@@ -189,11 +189,10 @@ export const env = {
   // ==========================================================
 
   qr: {
-    validitySeconds:
-      Number(
-        process.env.QR_VALIDITY_SECONDS ||
-        20
-      ),
+    // El QR de asistencia es un contrato de producto, no una preferencia
+    // configurable por ambiente. Mantenerlo fijo evita que una variable
+    // heredada en producción vuelva a reducir el ciclo a 10 segundos.
+    validitySeconds: 20,
 
     retentionMinutes:
       Number(
