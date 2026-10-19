@@ -6,15 +6,15 @@ const read = (relativePath: string) =>
   fs.readFileSync(path.resolve(process.cwd(), relativePath), 'utf8');
 
 describe('authenticated account deletion', () => {
-  test('requires password and the explicit ELIMINAR confirmation', () => {
+  test('requires password and the explicit CONFIRMAR confirmation', () => {
     expect(
       validateAccountDeletionPayload({
         password: 'Segura123',
-        confirmation: 'ELIMINAR',
+        confirmation: 'CONFIRMAR',
       })
     ).toEqual({
       password: 'Segura123',
-      confirmation: 'ELIMINAR',
+      confirmation: 'CONFIRMAR',
     });
 
     expect(() =>
@@ -22,7 +22,7 @@ describe('authenticated account deletion', () => {
         password: 'Segura123',
         confirmation: 'eliminar',
       })
-    ).toThrow('Escribe ELIMINAR');
+    ).toThrow('Escribe CONFIRMAR');
   });
 
   test('exposes deletion to the authenticated account owner before admin id routes', () => {

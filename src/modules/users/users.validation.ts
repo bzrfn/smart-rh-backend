@@ -25,7 +25,7 @@ export type ValidatedOwnProfilePayload = {
 
 export type ValidatedAccountDeletionPayload = {
   password: string;
-  confirmation: 'ELIMINAR';
+  confirmation: 'CONFIRMAR';
 };
 
 function asObject(
@@ -448,16 +448,16 @@ export function validateAccountDeletionPayload(
   const data = asObject(payload);
   const password = validatePassword(data.password);
 
-  if (data.confirmation !== 'ELIMINAR') {
+  if (data.confirmation !== 'CONFIRMAR') {
     throw new AppError(
-      'Escribe ELIMINAR para confirmar la eliminación de tu cuenta',
+      'Escribe CONFIRMAR para autorizar la eliminación de tu cuenta',
       400
     );
   }
 
   return {
     password,
-    confirmation: 'ELIMINAR',
+    confirmation: 'CONFIRMAR',
   };
 }
 
