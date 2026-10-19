@@ -267,6 +267,71 @@ export async function softDeleteUser(
   );
 }
 
+export async function anonymizeOwnAccount(
+  id: number,
+  replacementEmail: string,
+  replacementPassword: string
+): Promise<boolean> {
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const [rows] = await conn.query(
+      `SELECT id
+       FROM usuarios
+       WHERE id = ?
+       LIMIT 1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if ((rows as any[]).length === 0) {
+      await conn.rollback();
+      return false;
+    }
+
+    await conn.query(
+      `DELETE FROM usuario_modulos
+       WHERE usuario_id = ?`,
+      [id]
+    );
+
+    await conn.query(
+      `UPDATE usuarios
+       SET nombre = 'Cuenta',
+           apellido = 'eliminada',
+           correo = ?,
+           contrasena = ?,
+           telefono = NULL,
+           direccion = NULL,
+           fecha_ingreso = NULL,
+           foto_perfil_url = NULL,
+           credencial_url = NULL,
+           dias_vacaciones_disponibles = 0,
+           activo = 0,
+           email_verificado = 0,
+           session_version = COALESCE(session_version, 1) + 1,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [replacementEmail, replacementPassword, id]
+    );
+
+    await conn.commit();
+    return true;
+  } catch (error) {
+    try {
+      await conn.rollback();
+    } catch {
+      // Conserva el error original.
+    }
+
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
 
 export async function findRoleNameById(
   roleId: number

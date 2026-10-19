@@ -3,6 +3,7 @@ import { authJwt } from '../../middlewares/authJwt.js';
 import { requireRole } from '../../middlewares/requireRole.js';
 import {
   createUserController,
+  deleteOwnAccountController,
   deleteUserController,
   listUsersController,
   setActiveController,
@@ -14,6 +15,7 @@ import {
 export const userRoutes = Router();
 
 userRoutes.patch('/me', authJwt, updateOwnProfileController);
+userRoutes.delete('/me', authJwt, deleteOwnAccountController);
 
 userRoutes.get('/', authJwt, requireRole('admin'), listUsersController);
 userRoutes.post('/', authJwt, requireRole('admin'), createUserController);

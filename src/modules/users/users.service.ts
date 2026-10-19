@@ -1,6 +1,9 @@
 import {
   hashPassword,
+  verifyPassword,
 } from '../../utils/password.js';
+
+import { randomUUID } from 'crypto';
 
 import {
   AppError,
@@ -8,6 +11,7 @@ import {
 
 import {
   createUser,
+  anonymizeOwnAccount,
   findRoleNameById,
   findOwnProfileById,
   findUserById,
@@ -29,12 +33,17 @@ import {
 
 import {
   validateActiveValue,
+  validateAccountDeletionPayload,
   validateCreateUserPayload,
   validateOwnProfilePayload,
   validateUpdateUserPayload,
   validateUserId,
   validateVacationDays,
 } from './users.validation.js';
+
+import {
+  purgeAccountOwnedData,
+} from './users.account-deletion.js';
 
 export const getUsers =
   () => listUsers();
@@ -64,6 +73,44 @@ export async function editOwnProfile(
     ...user,
     email_verificado: Boolean(user.email_verificado),
   };
+}
+
+export async function deleteOwnAccount(
+  rawId: unknown,
+  payload: unknown
+) {
+  const id = validateUserId(rawId);
+  const data = validateAccountDeletionPayload(payload);
+  const user = await findUserById(id);
+
+  if (!user || !user.activo) {
+    throw new AppError('Usuario no encontrado', 404);
+  }
+
+  const passwordMatches = await verifyPassword(
+    data.password,
+    String(user.contrasena || '')
+  );
+
+  if (!passwordMatches) {
+    throw new AppError('La contraseña es incorrecta', 401);
+  }
+
+  await purgeAccountOwnedData(user);
+
+  const deletionId = randomUUID();
+  const replacementEmail =
+    `deleted+${id}+${deletionId}@deleted.smart-rh.invalid`;
+  const replacementPassword = await hashPassword(randomUUID());
+  const deleted = await anonymizeOwnAccount(
+    id,
+    replacementEmail,
+    replacementPassword
+  );
+
+  if (!deleted) {
+    throw new AppError('Usuario no encontrado', 404);
+  }
 }
 
 async function ensureRoleExists(

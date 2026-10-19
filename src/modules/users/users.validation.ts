@@ -23,6 +23,11 @@ export type ValidatedOwnProfilePayload = {
   direccion: string | null;
 };
 
+export type ValidatedAccountDeletionPayload = {
+  password: string;
+  confirmation: 'ELIMINAR';
+};
+
 function asObject(
   payload: unknown
 ): Record<string, unknown> {
@@ -434,6 +439,25 @@ export function validateOwnProfilePayload(
       'Dirección',
       500
     ),
+  };
+}
+
+export function validateAccountDeletionPayload(
+  payload: unknown
+): ValidatedAccountDeletionPayload {
+  const data = asObject(payload);
+  const password = validatePassword(data.password);
+
+  if (data.confirmation !== 'ELIMINAR') {
+    throw new AppError(
+      'Escribe ELIMINAR para confirmar la eliminación de tu cuenta',
+      400
+    );
+  }
+
+  return {
+    password,
+    confirmation: 'ELIMINAR',
   };
 }
 

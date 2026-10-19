@@ -7,6 +7,7 @@ import {
 } from '../documentos/documentos.service.js';
 import {
   addUser,
+  deleteOwnAccount,
   deleteUser,
   editOwnProfile,
   editUser,
@@ -14,6 +15,26 @@ import {
   toggleUser,
   updateUserVacationDays,
 } from './users.service.js';
+
+export async function deleteOwnAccountController(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    await deleteOwnAccount(
+      (req as any).auth?.userId,
+      req.body
+    );
+
+    res.json({
+      ok: true,
+      message: 'Tu cuenta fue eliminada permanentemente',
+    });
+  } catch (e) {
+    next(e);
+  }
+}
 
 export async function updateOwnProfileController(
   req: Request,
