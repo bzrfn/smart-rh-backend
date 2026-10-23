@@ -126,7 +126,8 @@ export function isValidAdminInviteToken(
 
 export function createAdminInviteTokenHmac(
   invitationId: string,
-  token: string
+  token: string,
+  accountType: 'admin' | 'empleado' = 'admin'
 ): string {
   const normalizedInvitationId =
     String(
@@ -143,6 +144,11 @@ export function createAdminInviteTokenHmac(
     )
       .trim()
       .toLowerCase();
+
+  const normalizedAccountType =
+    accountType === 'empleado'
+      ? 'empleado'
+      : 'admin';
 
 
   if (
@@ -161,7 +167,9 @@ export function createAdminInviteTokenHmac(
 
   return createAdminInviteHmac(
     'admin-invite-token',
-    `${normalizedInvitationId}:${normalizedToken}`
+    normalizedAccountType === 'empleado'
+      ? `${normalizedInvitationId}:${normalizedToken}:empleado`
+      : `${normalizedInvitationId}:${normalizedToken}`
   );
 }
 

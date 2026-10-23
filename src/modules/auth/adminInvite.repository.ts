@@ -63,7 +63,7 @@ export type AcceptAdminInvitationResult =
       user: {
         id: number;
         correo: string;
-        role: 'admin';
+        role: 'admin' | 'empleado';
         sessionVersion: number;
       };
     }
@@ -125,6 +125,19 @@ function normalizeEmail(
   )
     .trim()
     .toLowerCase();
+}
+
+
+function normalizeInviteRole(
+  value: unknown
+): 'admin' | 'empleado' {
+  return String(
+    value || ''
+  )
+    .trim()
+    .toLowerCase() === 'empleado'
+    ? 'empleado'
+    : 'admin';
 }
 
 
@@ -559,9 +572,9 @@ export async function createAdminInvitation(
           expires_at
         )
         VALUES (
-          ?, ?,
-          ?, ?,
           ?,
+          ?, ?,
+          ?, ?,
           ?, ?,
           ?, ?, ?,
           ?,
@@ -705,7 +718,8 @@ export async function revokeAdminInvitation(
 export async function acceptAdminInvitation(
   invitationIdInput: string,
   candidateTokenHmacInput: string,
-  passwordHashInput: string
+  passwordHashInput: string,
+  inviteRoleInput: 'admin' | 'empleado' = 'admin'
 ): Promise<AcceptAdminInvitationResult> {
   const invitationId =
     normalizeHex64(
@@ -723,6 +737,11 @@ export async function acceptAdminInvitation(
       ''
     )
       .trim();
+
+  const inviteRole =
+    normalizeInviteRole(
+      inviteRoleInput
+    );
 
   if (
     !HEX_64.test(
@@ -995,13 +1014,18 @@ export async function acceptAdminInvitation(
                 nombre
               )
             ) =
-              'admin'
+              ?
 
           LIMIT 1
-        `
+        `,
+        [
+          normalizeInviteRole(
+            inviteRole
+          ),
+        ]
       );
 
-    const adminRoleId =
+    const invitedRoleId =
       Number(
         (
           roleRows as any[]
@@ -1010,12 +1034,12 @@ export async function acceptAdminInvitation(
 
     if (
       !Number.isInteger(
-        adminRoleId
+        invitedRoleId
       ) ||
-      adminRoleId <= 0
+      invitedRoleId <= 0
     ) {
       throw new Error(
-        'Rol admin no encontrado'
+        'Rol de la invitación no encontrado'
       );
     }
 
@@ -1056,7 +1080,7 @@ export async function acceptAdminInvitation(
           invitation.invite_email,
           passwordHash,
 
-          adminRoleId,
+          invitedRoleId,
 
           invitation.telefono,
           invitation.direccion,
@@ -1080,7 +1104,7 @@ export async function acceptAdminInvitation(
       userId <= 0
     ) {
       throw new Error(
-        'No fue posible crear el administrador invitado'
+        'No fue posible crear la cuenta invitada'
       );
     }
 
@@ -1131,10 +1155,12 @@ export async function acceptAdminInvitation(
       )
         .trim()
         .toLowerCase() !==
-        'admin'
+        normalizeInviteRole(
+          inviteRole
+        )
     ) {
       throw new Error(
-        'Administrador invitado inválido'
+        'Cuenta invitada inválida'
       );
     }
 
@@ -1192,7 +1218,9 @@ export async function acceptAdminInvitation(
           ),
 
         role:
-          'admin',
+          normalizeInviteRole(
+            inviteRole
+          ),
 
         sessionVersion:
           Number(

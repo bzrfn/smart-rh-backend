@@ -4,6 +4,7 @@ import nodemailer from 'nodemailer';
 export type AdminInvitationEmailInput = {
   correo: string;
   nombre: string;
+  accountType?: 'admin' | 'empleado';
   acceptUrl: string;
   expiresInMinutes: number;
 };
@@ -73,6 +74,7 @@ function buildAdminInvitationHtml(
   input: {
     nombre: string;
     correo: string;
+    accountType: 'admin' | 'empleado';
     acceptUrl: string;
     expiresInMinutes: number;
   }
@@ -96,6 +98,19 @@ function buildAdminInvitationHtml(
     escapeHtml(
       input.expiresInMinutes
     );
+
+  const isAdmin =
+    input.accountType === 'admin';
+
+  const safeInvitationTitle =
+    isAdmin
+      ? 'Invitación administrativa'
+      : 'Invitación de empleado';
+
+  const safeAccountLabel =
+    isAdmin
+      ? 'administrativa'
+      : 'de empleado';
 
   const fechaEnvio =
     new Date()
@@ -130,7 +145,7 @@ function buildAdminInvitationHtml(
         />
 
         <title>
-          Invitación administrativa - SMART RH
+          ${safeInvitationTitle} - SMART RH
         </title>
       </head>
 
@@ -152,7 +167,7 @@ function buildAdminInvitationHtml(
             opacity:0;
           "
         >
-          Has recibido una invitación administrativa de SMART RH.
+          Has recibido una ${safeInvitationTitle.toLowerCase()} de SMART RH.
         </div>
 
 
@@ -282,7 +297,7 @@ function buildAdminInvitationHtml(
                               letter-spacing:0.8px;
                             "
                           >
-                            INVITACIÓN ADMIN
+                            ${isAdmin ? 'INVITACIÓN ADMIN' : 'INVITACIÓN EMPLEADO'}
                           </span>
 
                         </td>
@@ -313,7 +328,7 @@ function buildAdminInvitationHtml(
                         font-weight:900;
                       "
                     >
-                      Activa tu cuenta administrativa
+                      Activa tu cuenta ${safeAccountLabel}
                     </h2>
 
 
@@ -333,8 +348,8 @@ function buildAdminInvitationHtml(
                       >
                         ${safeNombre}
                       </strong>.
-                      Has sido invitado(a) a crear una cuenta
-                      administrativa dentro de SMART RH.
+                      Has sido invitado(a) a activar una cuenta
+                      ${safeAccountLabel} dentro de SMART RH.
                     </p>
 
                   </td>
@@ -436,7 +451,7 @@ function buildAdminInvitationHtml(
                                     font-weight:900;
                                   "
                                 >
-                                  Activar cuenta administrativa
+                                  Activar cuenta
                                 </a>
 
                               </td>
@@ -646,7 +661,7 @@ function buildAdminInvitationHtml(
                               line-height:1.5;
                             "
                           >
-                            Portal administrativo
+                            ${isAdmin ? 'Portal administrativo' : 'Aplicación SMART RH'}
                           </p>
 
                         </td>
@@ -842,7 +857,17 @@ export async function sendAdminInvitationEmail(
       input.nombre ||
       ''
     ).trim() ||
-    'Administrador';
+    'Usuario';
+
+  const accountType =
+    input.accountType === 'empleado'
+      ? 'empleado'
+      : 'admin';
+
+  const invitationLabel =
+    accountType === 'admin'
+      ? 'administrativa'
+      : 'de empleado';
 
   const correo =
     String(
@@ -879,15 +904,15 @@ export async function sendAdminInvitationEmail(
       correo,
 
     subject:
-      'Invitación administrativa - SMART RH',
+      `Invitación ${invitationLabel} - SMART RH`,
 
     text:
       [
-        'SMART RH - Invitación administrativa',
+        `SMART RH - Invitación ${invitationLabel}`,
         '',
         `Hola ${nombre}.`,
         '',
-        'Has sido invitado(a) a crear una cuenta administrativa en SMART RH.',
+        `Has sido invitado(a) a activar una cuenta ${invitationLabel} en SMART RH.`,
         '',
         `La invitación vence en ${input.expiresInMinutes} minutos.`,
         '',
@@ -906,6 +931,7 @@ export async function sendAdminInvitationEmail(
       buildAdminInvitationHtml({
         nombre,
         correo,
+        accountType,
         acceptUrl,
         expiresInMinutes:
           input.expiresInMinutes,

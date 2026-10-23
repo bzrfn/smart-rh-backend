@@ -289,6 +289,29 @@ function validateDate(
 }
 
 
+function validateInviteRole(
+  value: unknown
+): 'admin' | 'empleado' {
+  const role = String(
+    value || 'admin'
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    role !== 'admin' &&
+    role !== 'empleado'
+  ) {
+    throw new AppError(
+      'Tipo de cuenta inválido',
+      400
+    );
+  }
+
+  return role;
+}
+
+
 function isEligibleSponsor(
   user:
     SponsorUser |
@@ -345,13 +368,15 @@ string {
 
 function buildAcceptUrl(
   invitationId: string,
-  token: string
+  token: string,
+  accountType: 'admin' | 'empleado'
 ): string {
   return (
     `${getWebBaseUrl()}` +
-    '/admin/invitacion' +
+    '/activar-cuenta' +
     `?invitationId=${encodeURIComponent(invitationId)}` +
-    `&token=${encodeURIComponent(token)}`
+    `&token=${encodeURIComponent(token)}` +
+    `&tipoCuenta=${encodeURIComponent(accountType)}`
   );
 }
 
@@ -404,6 +429,11 @@ export function buildAdminInviteService(
         payload?.correo
       );
 
+    const inviteRole =
+      validateInviteRole(
+        payload?.tipo_cuenta
+      );
+
     const nombre =
       requiredText(
         payload?.nombre,
@@ -450,7 +480,8 @@ export function buildAdminInviteService(
     const tokenHmac =
       deps.createTokenHmac(
         invitationId,
-        token
+        token,
+        inviteRole
       );
 
     const requestIpHash =
@@ -496,7 +527,7 @@ export function buildAdminInviteService(
       'active'
     ) {
       throw new AppError(
-        'Ya existe una invitación administrativa activa para este correo',
+        'Ya existe una invitación activa para este correo',
         409
       );
     }
@@ -526,7 +557,8 @@ export function buildAdminInviteService(
     const acceptUrl =
       buildAcceptUrl(
         invitationId,
-        token
+        token,
+        inviteRole
       );
 
     try {
@@ -534,6 +566,9 @@ export function buildAdminInviteService(
         correo,
 
         nombre,
+
+        accountType:
+          inviteRole,
 
         acceptUrl,
 
@@ -548,7 +583,7 @@ export function buildAdminInviteService(
       );
 
       throw new AppError(
-        'No fue posible enviar la invitación administrativa',
+        'No fue posible enviar la invitación por correo',
         502
       );
     }
@@ -562,7 +597,9 @@ export function buildAdminInviteService(
         ADMIN_INVITE_EXPIRES_MINUTES,
 
       message:
-        'Invitación administrativa enviada correctamente',
+        inviteRole === 'admin'
+          ? 'Invitación administrativa enviada correctamente'
+          : 'Invitación de empleado enviada correctamente',
     };
   }
 
@@ -595,7 +632,7 @@ export function buildAdminInviteService(
       )
     ) {
       throw new AppError(
-        'Invitación administrativa inválida o expirada',
+        'Invitación inválida o expirada',
         400
       );
     }
@@ -605,10 +642,16 @@ export function buildAdminInviteService(
         payload?.contrasena
       );
 
+    const inviteRole =
+      validateInviteRole(
+        payload?.tipoCuenta
+      );
+
     const tokenHmac =
       deps.createTokenHmac(
         invitationId,
-        token
+        token,
+        inviteRole
       );
 
     const passwordHash =
@@ -620,7 +663,8 @@ export function buildAdminInviteService(
       await deps.acceptInvitation(
         invitationId,
         tokenHmac,
-        passwordHash
+        passwordHash,
+        inviteRole
       );
 
     if (
@@ -638,7 +682,7 @@ export function buildAdminInviteService(
       'ok'
     ) {
       throw new AppError(
-        'Invitación administrativa inválida o expirada',
+        'Invitación inválida o expirada',
         400
       );
     }
@@ -648,7 +692,9 @@ export function buildAdminInviteService(
         result.user,
 
       message:
-        'Cuenta administrativa activada correctamente. Inicia sesión para continuar.',
+        result.user.role === 'admin'
+          ? 'Cuenta administrativa activada correctamente. Inicia sesión para continuar.'
+          : 'Cuenta de empleado activada correctamente. Ya puedes iniciar sesión en SMART RH.',
     };
   }
 

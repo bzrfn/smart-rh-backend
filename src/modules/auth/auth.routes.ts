@@ -44,6 +44,11 @@ authRoutes.use(
   adminInviteRoutes
 );
 
+authRoutes.use(
+  '/invitations',
+  adminInviteRoutes
+);
+
 
 authRoutes.post('/login', loginController);
 

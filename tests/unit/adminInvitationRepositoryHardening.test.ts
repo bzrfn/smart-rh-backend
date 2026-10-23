@@ -308,7 +308,7 @@ describe(
 
 
     test(
-      'rol admin se resuelve por nombre y no por ID fijo',
+      'el rol invitado se resuelve por nombre y no por ID fijo',
       () => {
         const start =
           source.indexOf(
@@ -329,13 +329,13 @@ describe(
         expect(
           block
         ).toContain(
-          "'admin'"
+          'normalizeInviteRole'
         );
 
         expect(
           block
         ).toContain(
-          'adminRoleId'
+          'invitedRoleId'
         );
       }
     );

@@ -280,6 +280,44 @@ describe(
 
 
     test(
+      'crea invitacion de empleado y comunica el tipo de cuenta al correo',
+      async () => {
+        const deps = buildDeps();
+        const service = buildAdminInviteService(deps);
+
+        const result = await service.requestInvitation(
+          7,
+          {
+            ...payload,
+            tipo_cuenta: 'empleado',
+          },
+          '127.0.0.1'
+        );
+
+        expect(deps.createInvitation).toHaveBeenCalledWith(
+          expect.objectContaining({
+            inviteEmail: 'invite@example.test',
+          })
+        );
+
+        expect(deps.createTokenHmac).toHaveBeenCalledWith(
+          'a'.repeat(64),
+          'b'.repeat(64),
+          'empleado'
+        );
+
+        expect(deps.sendInvitationEmail).toHaveBeenCalledWith(
+          expect.objectContaining({
+            accountType: 'empleado',
+          })
+        );
+
+        expect(result.message).toMatch(/empleado/i);
+      }
+    );
+
+
+    test(
       'mapea invitacion activa a conflicto',
       async () => {
         const deps =
@@ -393,7 +431,8 @@ describe(
           ),
           'b'.repeat(
             64
-          )
+          ),
+          'admin'
         );
 
 
@@ -413,7 +452,8 @@ describe(
           'c'.repeat(
             64
           ),
-          'password-hash'
+          'password-hash',
+          'admin'
         );
 
 
