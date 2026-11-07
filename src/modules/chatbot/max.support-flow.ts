@@ -22,7 +22,6 @@ export type MaxTools = {
 };
 export const normalizeMaxText = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 const supportAction = [{ label: 'Abrir soporte', target: 'Soporte', scope: 'both' as const }];
-const meta = /ticket|folio|soporte|resume|resumen|verificaciones|pasos.*intente/;
 export function isMaxCreateRequest(text: string) {
   const s = normalizeMaxText(text);
   return !/\b(no|nunca)\s+(?:quiero\s+|debes\s+)?(?:crear|crees|generar|generes|registrar|registres|abras|abrir)/.test(s) &&
@@ -41,10 +40,41 @@ function cleanQuotedTitle(text: string) {
   return text.match(/(?:t[ií]tulo|asunto)\s*(?:es|ser[aá]|=|:)?\s*[“"«']([^”"»'\n]{3,120})[”"»']/i)?.[1]?.trim() ||
     text.match(/(?:t[ií]tulo|asunto)\s*:\s*([^\n]{3,120})/i)?.[1]?.trim();
 }
+// Separate reported facts from control instructions inside the same user message.
+// A whole-message keyword filter loses incidents that also mention a ticket.
+function incidentFacts(text: string): string[] {
+  const explicit = text.match(/descripci[oó]n\s*:\s*([\s\S]+)/i)?.[1];
+  const content = explicit ?? text
+    .replace(/(?:t[ií]tulo|asunto)\s*(?:es|ser[aá]|=|:)?\s*[“"«']([^”"»'\n]*)[”"»']/gi, '')
+    .replace(/(?:^|\n)\s*(?:t[ií]tulo|asunto)\s*:[^\n]*/gi, '');
+  return content
+    .replace(/(?:^|\s)\d+\\?\.\s+/g, '\n')
+    .replace(/(?:^|\n)\s*[-*•]\s+/g, '\n')
+    .split(/\n+|(?<=[.!?;])\s+/)
+    .map(part => part.trim())
+    .flatMap(part => {
+      const normalized = normalizeMaxText(part);
+      if (/^[¿?]|^(?:como|donde|que |cual|resume|resumeme|confirma|consulta el estado)/.test(normalized)) return [];
+      // "Genera un ticket porque ..." includes a report after the request.
+      if (isMaxCreateRequest(part)) {
+        const command = /\b(?:(?:quiero|necesito|puedes|por favor)\s+)?(?:crea|crear|creame|genera|generar|generame|levanta|levantar|abre|abrir|registra|registrar)\b/i.exec(part);
+        const before = command ? part.slice(0, command.index).replace(/(?:\s+y)?\s*$/, '') : '';
+        const reason = part.match(/(?:\b(?:porque|debido a que|ya que|pero)\s+|ticket\s*:\s*)(.+)/i)?.[1];
+        return [...(before ? incidentFacts(before) : []), ...(reason ? incidentFacts(reason) : [])];
+      }
+      if (/^(?:titulo|asunto)\s*:|^(?:si|ok|cancelar|cancela|no gracias)[.!]*$/.test(normalized)) return [];
+      if (/^(?:y )?(?:la )?descripcion del problema|preguntame|datos? que falt|siguiente paso|verificaciones realizadas/.test(normalized)) return [];
+      return /no (?:aparece|veo|puedo|funciona|permite|se)|error|fall|\bya\b|sigue |registr[oó]|actualic|cerr[eé]|comprob[eé]|verifiqu[eé]|revis[eé]|intent[eé]/i.test(normalized) ? [part] : [];
+    });
+}
 function incidentLines(history: ChatbotMessageContext[]) {
-  return history.filter(m => m.author === 'user').map(m => String(m.text || '').trim())
-    .filter(t => !meta.test(normalizeMaxText(t)) && !/^[¿?]|^(como|donde|que |cual)/.test(normalizeMaxText(t)))
-    .filter(t => /no (?:aparece|veo|puedo|funciona|permite|se)|error|fall|problema|ya |sigue |registr|actualic|cerre|comprobe/i.test(normalizeMaxText(t))).slice(-8);
+  return history.filter(m => m.author === 'user')
+    .map(m => incidentFacts(String(m.text || '')).join(' ')).filter(Boolean).slice(-8);
+}
+function incidentHistory(state: MaxState) {
+  const lastCreated = state.lastTicketId ? state.history.map(m => m.author === 'assistant' && /Creé el ticket con folio/.test(m.text || '')).lastIndexOf(true) : -1;
+  // While preparing another ticket, do not reuse the previous incident.
+  return state.draft && lastCreated >= 0 ? state.history.slice(lastCreated + 1) : state.history;
 }
 function preview(draft: MaxDraft) {
   return supportResponse(draft.ready ? 'ticket_borrador_listo' : 'ticket_datos_faltantes',
@@ -54,20 +84,20 @@ function preview(draft: MaxDraft) {
 }
 function buildDraft(message: string, history: ChatbotMessageContext[], previous?: MaxDraft): MaxDraft {
   const explicitDescription = message.match(/descripci[oó]n\s*:\s*([\s\S]+)/i)?.[1]?.trim();
-  const reported = incidentLines(history);
+  const reported = incidentLines([...history, { author: 'user', text: message }]);
   const directProblem = !cleanQuotedTitle(message) && !isMaxCreateRequest(message) && !isMaxSupportTurn(message) && message.length >= 15 &&
     !/[?¿]/.test(message) ? message.trim() : '';
-  const description = explicitDescription || (directProblem ? [previous?.descripcion, directProblem].filter(Boolean).join('\n') :
-    previous?.descripcion || reported.join('\n'));
+  const parts = [previous?.descripcion, ...reported, ...(!reported.length && directProblem ? [directProblem] : [])].filter((part): part is string => Boolean(part));
+  const description = explicitDescription || [...new Set(parts)].join('\n');
   const subject = normalizeMaxText(description);
   const title = cleanQuotedTitle(message) || previous?.titulo || (description ?
     `Incidencia de ${/asistencia|entrada|salida|qr/.test(subject) ? 'asistencia' : /vacacion/.test(subject) ? 'vacaciones' : /incapacidad/.test(subject) ? 'incapacidades' : 'SMART RH'}` : '');
   return { id: previous?.id || randomUUID(), titulo: title, descripcion: description.slice(0, 6000), ready: title.length >= 3 && description.length >= 15 };
 }
 function summary(state: MaxState) {
-  const reports = incidentLines(state.history);
+  const reports = incidentLines(incidentHistory(state));
   const said = state.draft?.descripcion || reports.join('\n');
-  const attempted = reports.filter(t => /\bya\b|actualic|cerre|abri|comprobe|verifique|revise|intente/.test(normalizeMaxText(t)));
+  const attempted = incidentLines([{ author: 'user', text: said }]).filter(t => /\bya\b|actualic|cerre|abri|comprobe|verifique|revise|intente/.test(normalizeMaxText(t)));
   return supportResponse('resumen_conversacion', said ? 'Este es el resumen de lo que reportaste; las verificaciones indicadas son las que tú mencionaste.' :
     'No tengo detalles suficientes del incidente en esta conversación. Describe el problema para resumirlo sin inventar información.',
     [`Problema reportado: ${said || 'No descrito.'}`, `Verificaciones reportadas: ${attempted.join(' | ') || 'No mencionaste verificaciones realizadas.'}`,
@@ -88,14 +118,19 @@ export async function runMaxTurn(input: MaxTurn, state: MaxState, tools: MaxTool
   const cancels = /^(no|no[, ]+gracias|cancelar|cancela(?:r)?(?: el)?(?: ticket| borrador| solicitud)?)[.!]*$/.test(s) ||
     /\bno\s+(?:quiero\s+|debes\s+)?(?:crear|crees|generar|generes|registrar|registres|abras)\b/.test(s);
   const lookup = /ticket|folio|solicitud de soporte/.test(s) &&
-    /estado|estatus|folio|seguimiento|consulta|consultar|confirm|creado|quedo|donde|ver |respuesta/.test(s) && !isMaxCreateRequest(message);
+    /estado|estatus|folio|seguimiento|consulta|consultar|confirm|creado|quedo|donde|ver |respuesta|respondio/.test(s) && !isMaxCreateRequest(message);
+  const wantsSummary = /\b(resume|resumeme)\b|resumen.*(?:conversa|problema|caso|report)|que (?:intente|intentamos|pasos)|verificaciones realizadas/.test(s);
+  // Recover facts retained in sessions whose incomplete draft was produced by the old parser.
+  if ((affirmative || input.crearTicket) && state.draft && !state.draft.ready && !cancels) {
+    state.draft = buildDraft(message, incidentHistory(state), state.draft);
+  }
   if (/(?:muestra|dame|revela|consulta|ver).{0,50}(?:contrasen|secret|clave.*(?:servidor|conexion|base de datos))|contrasenas de|credenciales.*servidor|ignora (?:tus|las) reglas/.test(s)) {
     result = { respuesta: supportResponse('seguridad', 'No puedo revelar contraseñas, claves ni secretos del sistema. Utilizo los permisos de tu sesión autenticada.'), ticket: null };
   } else if (/que.*puedes.*(?:hacer|consultar)|puedes.*(?:aprobar|rechazar).*conversacion/.test(s)) {
     result = { respuesta: supportResponse('capacidades', 'Puedo orientar sobre los módulos de SMART RH, consultar datos permitidos de empleados identificados y preparar, crear con confirmación y consultar tickets de soporte. Las aprobaciones y cambios de asistencia se realizan en sus módulos con los permisos correspondientes.',
       ['Para consultar un empleado, indica su ID o correo.', 'Para soporte, describe el problema y pide generar un ticket.', 'Las consultas de datos dependen del rol de tu sesión; no cambio permisos desde el chat.']), ticket: null };
-  } else if (/\b(resume|resumeme)\b|resumen.*(?:conversa|problema|caso|report)|que (?:intente|intentamos|pasos)|verificaciones realizadas/.test(s)) {
-    result = { respuesta: summary(state), ticket: null };
+  } else if (wantsSummary && !lookup && !isMaxCreateRequest(message) && !cancels && !input.crearTicket) {
+    result = { respuesta: summary({ ...state, history: [...state.history, { author: 'user', text: message }] }), ticket: null };
   } else if (cancels && state.draft) {
     delete state.draft;
     result = { respuesta: supportResponse('ticket_cancelado', 'Cancelé el borrador. No se creó un ticket nuevo.'), ticket: null };
@@ -121,11 +156,12 @@ export async function runMaxTurn(input: MaxTurn, state: MaxState, tools: MaxTool
     const id = explicitId || (state.draft && !/anterior|ultimo creado/.test(s) ? undefined : state.lastTicketId);
     if (!id) {
       result = { respuesta: supportResponse('ticket_sin_folio', 'No tengo un ticket registrado y verificado para esta conversación. Si ya existe, indica su folio para consultar el estado.',
-        state.draft ? [`Hay un borrador pendiente. ${state.draft.ready ? 'Falta confirmar su creación.' : 'Falta completar el incidente.'}`] : []), ticket: null };
+        wantsSummary ? summary(state).pasos : state.draft ? [`Hay un borrador pendiente. ${state.draft.ready ? 'Falta confirmar su creación.' : 'Falta completar el incidente.'}`] : []), ticket: null };
     } else {
       const ticket = await tools.get(id);
-      result = { respuesta: supportResponse('ticket_consultado', `Consulté el ticket ${ticket._id}. Estado actual: ${ticket.estado}.`,
-        [`Título: ${ticket.titulo}`, `Respuesta de soporte: ${ticket.respuesta_admin || 'Todavía no hay respuesta registrada.'}`,
+      result = { respuesta: supportResponse('ticket_consultado', `Consulté el ticket ${ticket._id}. Estado actual: ${ticket.estado}.${wantsSummary ? ` Respuesta de soporte: ${ticket.respuesta_admin || 'Todavía no hay respuesta registrada.'} Última actualización: ${ticket.updatedAt ? new Date(ticket.updatedAt).toISOString() : 'No disponible.'}` : ''}`,
+        wantsSummary ? [`Título: ${ticket.titulo}`, ...summary({ ...state, draft: undefined }).pasos] :
+          [`Título: ${ticket.titulo}`, `Respuesta de soporte: ${ticket.respuesta_admin || 'Todavía no hay respuesta registrada.'}`,
           `Última actualización: ${ticket.updatedAt ? new Date(ticket.updatedAt).toISOString() : 'No disponible.'}`, 'Puedes darle seguimiento desde Soporte.']), ticket };
     }
   } else if (!cancels && (isMaxCreateRequest(message) || input.crearTicket || /no pude resolver|no se resolvio|sigue igual|no funciono/.test(s) || (affirmative && state.history.some(m => m.author === 'assistant' && /ticket/.test(m.text || ''))) || (state.draft && !/[?¿]/.test(message)))) {
