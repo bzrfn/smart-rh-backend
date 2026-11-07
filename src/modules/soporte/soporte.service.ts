@@ -159,6 +159,7 @@ export async function crearTicketSoporte(data: {
   descripcion: string;
   prioridad?: string;
   metadata?: Record<string, any>;
+  max_request_key?: string;
 }) {
   if (!isMongoConnected()) {
     throw new AppError('MongoDB no está conectado. No se pudo registrar el ticket.', 500);
@@ -181,7 +182,14 @@ export async function crearTicketSoporte(data: {
     throw new AppError('La descripción es obligatoria', 400);
   }
 
-  const ticket = await SoporteTicketModel.create({
+  if (data.max_request_key) {
+    await SoporteTicketModel.init();
+    const existing = await SoporteTicketModel.findOne({ max_request_key: data.max_request_key, usuario_id: data.usuario_id });
+    if (existing) return existing;
+  }
+  let ticket;
+  try {
+    ticket = await SoporteTicketModel.create({
     usuario_id: data.usuario_id,
     categoria,
     titulo,
@@ -190,7 +198,15 @@ export async function crearTicketSoporte(data: {
     estado: 'abierto',
     respuesta_admin: '',
     metadata: data.metadata ?? {},
+    ...(data.max_request_key ? { max_request_key: data.max_request_key } : {}),
   });
+  } catch (error: any) {
+    if (error?.code === 11000 && data.max_request_key) {
+      const existing = await SoporteTicketModel.findOne({ max_request_key: data.max_request_key, usuario_id: data.usuario_id });
+      if (existing) return existing;
+    }
+    throw error;
+  }
 
   await registrarActividadEmpleado({
     usuario_id: data.usuario_id,
@@ -198,7 +214,7 @@ export async function crearTicketSoporte(data: {
     titulo: 'Reporte de soporte enviado',
     descripcion: `El usuario registró una incidencia de soporte: ${titulo}.`,
     modulo: 'soporte',
-    origen: 'mobile',
+    origen: data.metadata?.canal === 'web' ? 'web' : 'mobile',
     metadata: {
       ticket_id: ticket._id,
       categoria,
@@ -434,5 +450,14 @@ export async function actualizarTicketSoporteAdmin(data: {
     });
   }
 
+  return ticket;
+}
+
+export async function obtenerTicketSoporteAutorizado(data: { ticket_id: string; usuario_id: number; role: string }) {
+  if (!isMongoConnected()) throw new AppError('Soporte no está disponible. No puedo verificar el estado del ticket.', 503);
+  validarObjectId(data.ticket_id);
+  const query = { _id: data.ticket_id, ...(data.role === 'admin' ? {} : { usuario_id: data.usuario_id }) };
+  const ticket = await SoporteTicketModel.findOne(query).select('_id titulo estado respuesta_admin updatedAt').lean();
+  if (!ticket) throw new AppError('Ticket no encontrado o no disponible para tu cuenta.', 404);
   return ticket;
 }

@@ -71,14 +71,10 @@ describe('Max modular intelligence architecture', () => {
     );
   });
 
-  it('permite confirmar ticket desde continuidad conversacional', () => {
-    const controller = fs.readFileSync(
-      path.join(chatbotDir, 'chatbot.controller.ts'),
-      'utf8'
-    );
-
-    expect(controller).toMatch(/isConfirmation/);
-    expect(controller).toMatch(/recentTicketOffer/);
-    expect(controller).toMatch(/crear ticket\|ticket con contexto/);
+  it('delega confirmación y contexto persistente en el flujo de soporte', () => {
+    const controller = fs.readFileSync(path.join(chatbotDir, 'chatbot.controller.ts'), 'utf8');
+    expect(controller).toMatch(/runMaxTurn/);
+    expect(controller).toMatch(/withMaxSession/);
+    expect(controller).not.toMatch(/recentTicketOffer/);
   });
 });

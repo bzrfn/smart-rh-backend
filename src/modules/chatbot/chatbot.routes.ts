@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authJwt } from '../../middlewares/authJwt.js';
 import {
   responderChatbotController,
+  eliminarConversacionMaxController,
   sugerenciasChatbotController,
 } from './chatbot.controller.js';
 
@@ -18,3 +19,6 @@ chatbotRoutes.post(
   authJwt,
   responderChatbotController
 );
+
+chatbotRoutes.delete('/conversaciones/:id', authJwt, eliminarConversacionMaxController);
+chatbotRoutes.delete('/conversaciones', authJwt, eliminarConversacionMaxController);
