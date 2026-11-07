@@ -5,6 +5,7 @@ import {
   ChatbotResponse,
   ChatbotRole,
 } from './chatbot.types.js';
+import { isMaxCreateRequest } from './max.support-flow.js';
 import { buildMaxIntentMessage } from './max.context.js';
 import {
   extractEmployeeLookup,
@@ -153,7 +154,7 @@ const KNOWLEDGE_BASE: ChatbotKnowledgeEntry[] = [
     id: 'asistencia-empleado',
     categoria: 'Asistencia',
     titulo: 'Consulta y registro de asistencia',
-    roles: ['all'],
+    roles: ['empleado', 'usuario', 'tecnico'],
     keywords: [
       'asistencia',
       'entrada',
@@ -1057,7 +1058,7 @@ function buildFallbackResponse(
 }
 
 function isTicketRequestMessage(message: string) {
-  return /crear.*ticket|levantar.*ticket|abrir.*ticket|ticket.*contexto|no pude resolver|no se resolvio|sigue igual|no quedo|no funciono|no lo pude resolver/.test(message);
+  return isMaxCreateRequest(message) || /crear.*ticket|levantar.*ticket|abrir.*ticket|ticket.*contexto|no pude resolver|no se resolvio|sigue igual|no quedo|no funciono|no lo pude resolver/.test(message);
 }
 
 function isAffirmativeMessage(message: string) {
@@ -1940,10 +1941,11 @@ export function responderChatbot(data: {
   }
 
   const entries = KNOWLEDGE_BASE.filter((entry) =>
-    canUseEntry(entry, role)
+    canUseEntry(entry, role) || (role === 'admin' && entry.id === 'asistencia-empleado' && /(?:mi asistencia|registrar mi|marcar mi|escaneo.*qr)/.test(mensaje))
   );
 
-  const directEntryId = resolveDirectEntryId(messageWithContext);
+  const resolvedEntryId = resolveDirectEntryId(messageWithContext);
+  const directEntryId = role === 'admin' && resolvedEntryId === 'asistencia-empleado' && !/(?:mi asistencia|registrar mi|marcar mi|escaneo.*qr)/.test(mensaje) ? 'asistencia-admin' : resolvedEntryId;
 
   const ranked = entries
     .map((entry) => ({

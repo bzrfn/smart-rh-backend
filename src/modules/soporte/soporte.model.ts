@@ -39,6 +39,7 @@ const SoporteTicketSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    max_request_key: { type: String },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
@@ -49,6 +50,8 @@ const SoporteTicketSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+SoporteTicketSchema.index({ max_request_key: 1 }, { unique: true, partialFilterExpression: { max_request_key: { $type: 'string' } } });
 
 export const SoporteTicketModel = mongoose.model(
   'SoporteTicket',

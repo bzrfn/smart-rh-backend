@@ -48,6 +48,10 @@ export function buildMaxIntentMessage(
   }
 
   if (!isEmployeeLookupContinuation(currentMessage)) {
+    if (/^(ya |sigue |aun |todavia |eso |no aparece|no se muestra|el registro|la solicitud|y si |pero )/.test(currentMessage)) {
+      const previous = [...historial].reverse().find(item => item.author === 'user' && isOperationalFlowIntent(compactText(item.text)));
+      if (previous) return compactText(`${previous.text} ${message}`);
+    }
     return currentMessage;
   }
 
