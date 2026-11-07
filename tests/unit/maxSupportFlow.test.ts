@@ -161,4 +161,79 @@ describe('Max: conversación administrativa y tickets reales', () => {
     expect(h.tools.create).not.toHaveBeenCalled();
   });
 
+  const combined = '1\\. Estoy realizando una prueba. Un empleado de prueba registró su entrada con QR, pero el registro no aparece en asistencia. 2. Para esta prueba, ya comprobé el empleado y la fecha, actualicé el listado y cerré y abrí la aplicación. Sigue sin aparecer. 3. Quiero generar un ticket con título “PRUEBA — Validación de Max” y la descripción del problema que acabamos de revisar.';
+  const combinedStatus = '¿Cuál es el estado actual de ese ticket y qué respondió soporte? Resume el problema reportado, las verificaciones realizadas y el siguiente paso.';
+  it('reproduce el mensaje numerado exacto, confirma una sola vez y combina estado real con resumen', async () => {
+    const h = harness();
+    const draft = await h.send(combined);
+    expect(draft.respuesta.intent).toBe('ticket_borrador_listo');
+    expect(h.state.draft?.titulo).toBe('PRUEBA — Validación de Max');
+    expect(h.state.draft?.descripcion).toContain('el registro no aparece en asistencia');
+    expect(h.state.draft?.descripcion).toContain('ya comprobé el empleado y la fecha, actualicé el listado y cerré y abrí la aplicación');
+    expect(h.state.draft?.descripcion).not.toContain('Quiero generar');
+    expect(h.tools.create).not.toHaveBeenCalled();
+    const created = await h.send('Sí, crear el ticket.');
+    expect(created.created).toBe(true);
+    expect(created.ticket.titulo).toBe('PRUEBA — Validación de Max');
+    h.tickets.get(id).estado = 'resuelto';
+    h.tickets.get(id).respuesta_admin = 'El registro fue revisado por soporte.';
+    const status = await h.send(combinedStatus);
+    expect(status.respuesta.intent).toBe('ticket_consultado');
+    expect(status.respuesta.respuesta).toContain('resuelto');
+    expect(JSON.stringify(status.respuesta)).toContain('El registro fue revisado por soporte.');
+    expect(status.respuesta.pasos.join(' ')).toContain('el registro no aparece en asistencia');
+    expect(status.respuesta.pasos.join(' ')).toContain('actualicé el listado');
+    expect(status.respuesta.pasos.join(' ')).toContain('Siguiente paso');
+    expect(status.respuesta.pasos.length).toBeLessThanOrEqual(4);
+    expect(h.tools.get).toHaveBeenCalledWith(id);
+    await h.send('Sí, crear el ticket.');
+    expect(h.tools.create).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    `${incident} ${attempts} Quiero generar un ticket con título “PRUEBA — Validación de Max”.`,
+    `1. ${incident}\n2. ${attempts}\n3. Generar ticket con título “PRUEBA — Validación de Max”.`,
+    `- ${incident}\n- ${attempts}\n- Generar ticket con título “PRUEBA — Validación de Max”.`,
+    `Quiero generar un ticket porque no aparece la entrada con QR del empleado de prueba.`,
+    `No puedo descargar el recibo; genera un ticket de soporte.`,
+    `El registro no aparece y quiero generar un ticket con título “PRUEBA”.`,
+    `Generar ticket: no aparece la entrada con QR del empleado.`,
+    `El módulo de soporte no funciona. Generar ticket con título “Error de soporte”.`,
+  ])('conserva hechos en solicitudes compuestas: %s', async text => {
+    const h = harness(); const result = await h.send(text);
+    expect(result.respuesta.intent).toBe('ticket_borrador_listo');
+    expect(h.state.draft?.descripcion).toMatch(/no aparece|no puedo|no funciona/i);
+    expect(h.tools.create).not.toHaveBeenCalled();
+  });
+  it('recupera una conversación guardada con borrador incompleto por la versión anterior', async () => {
+    const h = harness();
+    h.state.history.push({ author: 'user', text: combined }, { author: 'assistant', text: 'Descripción: Pendiente de indicar' });
+    h.state.draft = { id: 'old-draft', titulo: 'PRUEBA — Validación de Max', descripcion: '', ready: false };
+    const result = await h.send('Sí, crear el ticket.');
+    expect(result.created).toBe(true);
+    expect(result.ticket.descripcion).toContain('actualicé el listado');
+  });
+  it('resume el caso conocido sin inventar un folio si se consulta antes de confirmar', async () => {
+    const h = harness(); await h.send(combined);
+    const result = await h.send(combinedStatus);
+    expect(result.respuesta.intent).toBe('ticket_sin_folio');
+    expect(result.respuesta.pasos.join(' ')).toContain('actualicé el listado');
+    expect(result.respuesta.pasos.join(' ')).toContain('confirmar');
+    expect(h.tools.get).not.toHaveBeenCalled(); expect(h.tools.create).not.toHaveBeenCalled();
+  });
+  it('no toma instrucciones ni un título como evidencia de un incidente', async () => {
+    const h = harness();
+    await h.send('¿Cómo puedo generar un ticket con título “Registro no aparece”?');
+    await h.send('Generar ticket con título “Registro no aparece” y la descripción del problema que acabamos de revisar.');
+    expect(h.state.draft?.ready).toBe(false);
+    expect(h.state.draft?.descripcion).toBe('');
+    await h.send('Sí, crear el ticket.');
+    expect(h.tools.create).not.toHaveBeenCalled();
+  });
+  it('el resumen toma verificaciones dentro de una descripción explícita', async () => {
+    const h = harness();
+    await h.send(`Crear ticket. Título: PRUEBA\nDescripción: ${incident} ${attempts}`);
+    const result = await h.send('Resume el problema y las verificaciones realizadas.');
+    expect(result.respuesta.pasos[1]).toContain('actualicé el listado');
+  });
+
 });

@@ -67,4 +67,22 @@ describe('Max: contrato del controlador autenticado', () => {
     await eliminarConversacionMaxController({ auth: { userId: 42, role: 'admin' }, params: {}, query: {} } as any, { json: jest.fn() } as any, next);
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409 })); expect(MaxSessionModel.deleteMany).not.toHaveBeenCalled();
   });
+  it('transporta el mensaje compuesto del portal hasta persistencia y consulta estado con resumen', async () => {
+    const message = '1. Estoy realizando una prueba. Un empleado de prueba registró su entrada con QR, pero el registro no aparece en asistencia. 2. Para esta prueba, ya comprobé el empleado y la fecha, actualicé el listado y cerré y abrí la aplicación. Sigue sin aparecer. 3. Quiero generar un ticket con título “PRUEBA — Validación de Max” y la descripción del problema que acabamos de revisar.';
+    const draft = await call({ mensaje: message });
+    expect(draft.data.respuesta.intent).toBe('ticket_borrador_listo');
+    expect(crearTicketSoporte).not.toHaveBeenCalled();
+    const created = await call({ mensaje: 'Sí, crear el ticket.' });
+    expect(created.res.status).toHaveBeenCalledWith(201);
+    expect(crearTicketSoporte).toHaveBeenCalledWith(expect.objectContaining({
+      usuario_id: 42, titulo: 'PRUEBA — Validación de Max', descripcion: expect.stringContaining('actualicé el listado'),
+    }));
+    const status = await call({ mensaje: '¿Cuál es el estado actual de ese ticket y qué respondió soporte? Resume el problema reportado, las verificaciones realizadas y el siguiente paso.' });
+    expect(status.data.respuesta.intent).toBe('ticket_consultado');
+    expect(status.data.respuesta.respuesta).toContain('en_revision');
+    expect(status.data.respuesta.respuesta).toContain('Estamos revisando.');
+    expect(status.data.respuesta.pasos.join(' ')).toContain('actualicé el listado');
+    expect(obtenerTicketSoporteAutorizado).toHaveBeenCalledWith({ ticket_id: created.data.ticket._id, usuario_id: 42, role: 'admin' });
+  });
+
 });
