@@ -388,7 +388,8 @@ describe(
           'a'.repeat(
             64
           ),
-          7
+          7,
+          'delivery_failed'
         );
       }
     );
