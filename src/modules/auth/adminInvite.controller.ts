@@ -1,3 +1,4 @@
+import { getPendingInvitations, resendAdminInvitation } from './adminInvite.service.js';
 import type {
   NextFunction,
   Response,
@@ -66,4 +67,13 @@ export async function acceptAdminInvitationController(
       error
     );
   }
+}
+
+export async function listPendingInvitationsController(req: AuthRequest, res: Response, next: NextFunction) {
+  try { res.json({ ok: true, invitations: await getPendingInvitations(req.auth?.userId) }); }
+  catch (error) { next(error); }
+}
+export async function resendInvitationController(req: AuthRequest, res: Response, next: NextFunction) {
+  try { res.status(201).json({ ok: true, ...await resendAdminInvitation(req.auth?.userId, req.params.id, req.body, req.ip) }); }
+  catch (error) { next(error); }
 }

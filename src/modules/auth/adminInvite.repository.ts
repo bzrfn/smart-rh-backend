@@ -35,6 +35,8 @@ export type CreateAdminInvitationInput = {
   requestIpHash?: string | null;
 
   expiresInMinutes: number;
+  accountType?: 'admin' | 'empleado';
+  replacesInvitationId?: string;
 };
 
 
@@ -53,7 +55,8 @@ export type CreateAdminInvitationResult =
     }
   | {
       status: 'sponsor_stale';
-    };
+    }
+  | { status: 'invitation_unavailable' | 'cooldown' };
 
 
 export type AcceptAdminInvitationResult =
@@ -496,6 +499,26 @@ export async function createAdminInvitation(
       };
     }
 
+    if (input.replacesInvitationId) {
+      const [targets] = await conn.query(
+        `SELECT invitation_id, account_type, created_at, accepted_at, revoked_at, delivery_failed_at FROM admin_invitations
+         WHERE invitation_id = ? AND invite_email = ? LIMIT 1 FOR UPDATE`,
+        [input.replacesInvitationId, inviteEmail]
+      );
+      const target = (targets as any[])[0];
+      if (!target || target.accepted_at || (target.revoked_at && !target.delivery_failed_at) ||
+          (target.account_type && target.account_type !== input.accountType)) {
+        await conn.commit(); return { status: 'invitation_unavailable' };
+      }
+      if (new Date(target.created_at).getTime() > Date.now() - 60000) {
+        await conn.commit(); return { status: 'cooldown' };
+      }
+      await conn.query(
+        `UPDATE admin_invitations SET revoked_at = NOW(), delivery_failed_at = NULL
+         WHERE invite_email = ? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL)`, [inviteEmail]
+      );
+    }
+
     const [
       activeInvitations,
     ] =
@@ -569,7 +592,8 @@ export async function createAdminInvitation(
 
           request_ip_hash,
 
-          expires_at
+          expires_at,
+          account_type
         )
         VALUES (
           ?,
@@ -579,7 +603,7 @@ export async function createAdminInvitation(
           ?, ?, ?,
           ?,
           ?,
-          ?
+          ?, ?
         )
       `,
       [
@@ -619,6 +643,7 @@ export async function createAdminInvitation(
           null,
 
         expiresAt,
+        input.accountType || null,
       ]
     );
 
@@ -653,7 +678,8 @@ export async function createAdminInvitation(
 
 export async function revokeAdminInvitation(
   invitationIdInput: string,
-  sponsorAdminIdInput: number
+  sponsorAdminIdInput: number,
+  reason: 'revoked' | 'delivery_failed' = 'revoked'
 ): Promise<boolean> {
   const invitationId =
     normalizeHex64(
@@ -688,7 +714,8 @@ export async function revokeAdminInvitation(
             COALESCE(
               revoked_at,
               NOW()
-            )
+            ),
+          delivery_failed_at = CASE WHEN ? THEN NOW() ELSE NULL END
 
         WHERE
           invitation_id = ?
@@ -699,6 +726,7 @@ export async function revokeAdminInvitation(
           AND revoked_at IS NULL
       `,
       [
+        reason === 'delivery_failed',
         invitationId,
         sponsorAdminId,
       ]
@@ -1249,4 +1277,35 @@ export async function acceptAdminInvitation(
 
     conn.release();
   }
+}
+
+export type PendingInvitation = {
+  invitation_id: string; invite_email: string; nombre: string; apellido: string;
+  account_type: 'admin' | 'empleado' | null;
+  telefono: string | null; direccion: string | null; fecha_ingreso: Date | string | null;
+  delivery_failed_at: Date | string | null;
+  dias_vacaciones_disponibles: number; created_at: Date | string; expires_at: Date | string;
+};
+export async function listPendingInvitations(): Promise<PendingInvitation[]> {
+  const [rows] = await pool.query(`
+    SELECT i.invitation_id, i.invite_email, i.nombre, i.apellido, i.account_type,
+      i.telefono, i.direccion, i.fecha_ingreso, i.dias_vacaciones_disponibles, i.created_at, i.expires_at, i.delivery_failed_at
+    FROM admin_invitations i
+    WHERE i.accepted_at IS NULL AND (i.revoked_at IS NULL OR i.delivery_failed_at IS NOT NULL)
+      AND NOT EXISTS (SELECT 1 FROM usuarios u WHERE u.correo = i.invite_email)
+      AND NOT EXISTS (SELECT 1 FROM admin_invitations newer
+        WHERE newer.invite_email = i.invite_email AND newer.accepted_at IS NULL AND (newer.revoked_at IS NULL OR newer.delivery_failed_at IS NOT NULL)
+          AND (newer.created_at > i.created_at OR (newer.created_at = i.created_at AND newer.invitation_id > i.invitation_id)))
+    ORDER BY i.created_at DESC LIMIT 1000
+  `);
+  return rows as PendingInvitation[];
+}
+export async function findPendingInvitation(id: string): Promise<PendingInvitation | null> {
+  if (!HEX_64.test(id)) return null;
+  const [rows] = await pool.query(`
+    SELECT invitation_id, invite_email, nombre, apellido, account_type,
+      telefono, direccion, fecha_ingreso, dias_vacaciones_disponibles, created_at, expires_at, delivery_failed_at
+    FROM admin_invitations WHERE invitation_id = ? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL) LIMIT 1
+  `, [id]);
+  return (rows as PendingInvitation[])[0] || null;
 }

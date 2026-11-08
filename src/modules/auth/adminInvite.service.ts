@@ -1,3 +1,4 @@
+import { findPendingInvitation, listPendingInvitations } from './adminInvite.repository.js';
 import {
   AppError,
 } from '../../utils/AppError.js';
@@ -45,6 +46,8 @@ type SponsorUser = {
 
 
 export type AdminInviteDependencies = {
+  findPendingInvitation: typeof findPendingInvitation;
+  listPendingInvitations: typeof listPendingInvitations;
   findSponsor:
     typeof findUserById;
 
@@ -79,6 +82,8 @@ export type AdminInviteDependencies = {
 
 const defaultDependencies:
 AdminInviteDependencies = {
+  findPendingInvitation,
+  listPendingInvitations,
   findSponsor:
     findUserById,
 
@@ -381,15 +386,13 @@ function buildAcceptUrl(
 }
 
 
-export function buildAdminInviteService(
-  deps:
-    AdminInviteDependencies =
-      defaultDependencies
-) {
+export function buildAdminInviteService(overrides: Partial<AdminInviteDependencies> = {}) {
+  const deps: AdminInviteDependencies = { ...defaultDependencies, ...overrides };
   async function requestInvitation(
     sponsorUserIdInput: unknown,
     payload: any,
-    requestIp?: unknown
+    requestIp?: unknown,
+    replacesInvitationId?: string
   ) {
     const sponsorUserId =
       Number(
@@ -520,6 +523,8 @@ export function buildAdminInviteService(
 
         expiresInMinutes:
           ADMIN_INVITE_EXPIRES_MINUTES,
+        accountType: inviteRole,
+        replacesInvitationId,
       });
 
     if (
@@ -554,6 +559,13 @@ export function buildAdminInviteService(
       );
     }
 
+    if (result.status === 'invitation_unavailable') {
+      throw new AppError('La invitación ya fue aceptada o sustituida. Actualiza el listado.', 409);
+    }
+    if (result.status === 'cooldown') {
+      throw new AppError('Espera un minuto entre reenvíos de una misma invitación.', 429);
+    }
+
     const acceptUrl =
       buildAcceptUrl(
         invitationId,
@@ -579,7 +591,8 @@ export function buildAdminInviteService(
     } catch {
       await deps.revokeInvitation(
         invitationId,
-        sponsor.id
+        sponsor.id,
+        'delivery_failed'
       );
 
       throw new AppError(
@@ -603,6 +616,35 @@ export function buildAdminInviteService(
     };
   }
 
+
+  async function pendingInvitations(sponsorUserId: unknown) {
+    const sponsor = await deps.findSponsor(Number(sponsorUserId)) as SponsorUser | null;
+    if (!isEligibleSponsor(sponsor)) throw new AppError('Administrador no autorizado', 403);
+    return deps.listPendingInvitations();
+  }
+
+  async function resendInvitation(sponsorUserId: unknown, rawId: unknown, payload: any, requestIp?: unknown) {
+    const sponsor = await deps.findSponsor(Number(sponsorUserId)) as SponsorUser | null;
+    if (!isEligibleSponsor(sponsor)) throw new AppError('Administrador no autorizado', 403);
+    const id = String(rawId || '');
+    if (!/^[a-f0-9]{64}$/.test(id)) throw new AppError('Invitación inválida', 400);
+    const original = await deps.findPendingInvitation(id);
+    if (!original) throw new AppError('La invitación ya fue aceptada o sustituida. Actualiza el listado.', 409);
+    // Older invitations did not persist the role. Require an explicit administrative choice.
+    if (!original.account_type && !['admin', 'empleado'].includes(payload?.tipo_cuenta)) {
+      throw new AppError('Selecciona el tipo de cuenta de esta invitación anterior antes de reenviarla.', 400);
+    }
+    const role = original.account_type || validateInviteRole(payload.tipo_cuenta);
+    if (original.account_type && payload?.tipo_cuenta && payload.tipo_cuenta !== role) {
+      throw new AppError('El reenvío no puede cambiar el rol de la invitación.', 409);
+    }
+    return requestInvitation(sponsorUserId, {
+      correo: original.invite_email, nombre: original.nombre, apellido: original.apellido,
+      telefono: original.telefono, direccion: original.direccion,
+      fecha_ingreso: original.fecha_ingreso instanceof Date ? original.fecha_ingreso.toISOString().slice(0, 10) : original.fecha_ingreso ? String(original.fecha_ingreso).slice(0, 10) : null,
+      dias_vacaciones_disponibles: original.dias_vacaciones_disponibles, tipo_cuenta: role,
+    }, requestIp, id);
+  }
 
   async function acceptInvitation(
     payload: any
@@ -702,6 +744,8 @@ export function buildAdminInviteService(
   return {
     requestInvitation,
     acceptInvitation,
+    pendingInvitations,
+    resendInvitation,
   };
 }
 
@@ -716,3 +760,6 @@ export const requestAdminInvitation =
 
 export const acceptAdminInvite =
   defaultService.acceptInvitation;
+
+export const getPendingInvitations = defaultService.pendingInvitations;
+export const resendAdminInvitation = defaultService.resendInvitation;
