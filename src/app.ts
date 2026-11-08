@@ -1,3 +1,4 @@
+import { readiness } from './config/readiness.js';
 import express, {
   NextFunction,
   Request,
@@ -344,6 +345,8 @@ app.get(
 // ============================================================
 // HEALTH CHECK
 // ============================================================
+
+app.get('/ready', readiness);
 
 app.get(
   '/health',
