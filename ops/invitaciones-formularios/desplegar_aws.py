@@ -90,7 +90,7 @@ def publish_portal(s3,cf,manifest,before,run_id,report):
             if not key.startswith('assets/'): continue
             data=(ROOT/'web-dist'/key).read_bytes()
             try:
-                write_object(s3,key,data,ContentType=mimetypes.guess_type(key)[0] or 'application/octet-stream',CacheControl='public,invitations-age=31536000,immutable')
+                write_object(s3,key,data,ContentType=mimetypes.guess_type(key)[0] or 'application/octet-stream',CacheControl='public,max-age=31536000,immutable')
             except Exception as error:
                 code=getattr(error,'response',{}).get('Error',{}).get('Code')
                 if code not in ['PreconditionFailed','412']: raise

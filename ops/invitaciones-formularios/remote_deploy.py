@@ -100,6 +100,7 @@ def deploy_locked(args,manifest):
     env=runtime(); require(bool(env.get('MONGO_URI')),'MONGO_NO_CONFIGURADO')
     require(bool(env.get('DB_SECRET_ARN')) and DROPIN.is_file(), 'CORRECCION_ROTACION_NO_PRESENTE')
     dropin_hash=sha(DROPIN)
+
     require(args.apply, 'USA_APPLY_PARA_MIGRACION_Y_PRUEBA_AISLADA')
     require(health(),'HEALTH_PREVIO_FALLO')
     node=int(cmd([env.get('DB_NODE_EXECUTABLE','node'),'-p','process.versions.node.split(".")[0]']).stdout.strip()); require(node>=20,'NODE_REQUIERE_VERSION_20_O_SUPERIOR')
@@ -113,6 +114,12 @@ def deploy_locked(args,manifest):
         existing=sha(path) if path.exists() else None
         original_hashes[relative]=existing
         require(existing in (info['before'],info['after']), 'MODULO_PRODUCCION_DIFIERE_'+relative)
+    # Private user backups are created by the backend service, never by the website bucket.
+    for directory in [BACKEND/'private-backups',BACKEND/'private-backups/user-deletions']:
+        require(not directory.is_symlink(),'RESPALDO_PRIVADO_SYMLINK_NO_PERMITIDO')
+        directory.mkdir(exist_ok=True,mode=0o700)
+        os.chown(directory,int(env.get('DB_PROBE_UID',os.getuid())),int(env.get('DB_PROBE_GID',os.getgid())))
+        directory.chmod(0o700)
     print('PRECHECK_BACKEND=OK',flush=True)
     if not (ROOT/'node_modules').exists(): (ROOT/'node_modules').symlink_to(BACKEND/'node_modules',target_is_directory=True)
     candidate=ROOT/'candidate'; require(not candidate.exists(),'CANDIDATO_YA_EXISTE')

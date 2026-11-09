@@ -1,3 +1,4 @@
+import { permanentlyDeleteUser } from './users.permanent-deletion.js';
 import { Request, Response, NextFunction } from 'express';
 import { validateCreateUser } from '../../validators/userValidators.js';
 import {
@@ -203,4 +204,11 @@ export async function deleteUserController(req: Request, res: Response, next: Ne
   } catch (e) {
     next(e);
   }
+}
+
+export async function permanentlyDeleteUserController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await permanentlyDeleteUser(Number(req.params.id),Number((req as any).auth?.userId),req.body?.confirmEmail);
+    res.json({ok:true,message:'Usuario eliminado permanentemente',...result});
+  } catch (error) { next(error); }
 }
