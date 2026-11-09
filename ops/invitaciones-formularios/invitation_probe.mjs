@@ -29,6 +29,8 @@ try {
   if (process.argv.includes('--migrate')) {
     await pool.query("ALTER TABLE admin_invitations ADD COLUMN IF NOT EXISTS account_type ENUM('admin','empleado') DEFAULT NULL");
     await pool.query('ALTER TABLE admin_invitations ADD COLUMN IF NOT EXISTS delivery_failed_at DATETIME DEFAULT NULL');
+    await pool.query('ALTER TABLE admin_invitations ADD COLUMN IF NOT EXISTS existing_user_id INT DEFAULT NULL');
+    await pool.query('ALTER TABLE admin_invitations ADD COLUMN IF NOT EXISTS existing_user_session_version INT DEFAULT NULL');
     console.log('MIGRACION_ADITIVA=OK');
   }
   stage = 'stage_tables';
@@ -66,6 +68,25 @@ try {
   await assert.rejects(service.resendInvitation(sponsorId, replacement.invitationId, {}));
   assert.equal((await service.pendingInvitations(sponsorId)).length, 0);
   console.log('INVITACION_ENLACE_ANTERIOR_INVALIDADO=OK\nINVITACION_ACEPTADA_NO_REENVIABLE=OK');
+  stage = 'existing_account';
+  await pool.query('UPDATE admin_invitations SET created_at=DATE_SUB(NOW(), INTERVAL 2 MINUTE) WHERE invite_email=?', [payload.correo]);
+  const [beforeExisting] = await pool.query('SELECT COUNT(*) AS count FROM usuarios');
+  const existingMail = sent.length;
+  const existingInvite = await service.resendExistingAccount(sponsorId, accepted.user.id);
+  assert.equal(sent.length, existingMail+1);
+  const [unchanged] = await pool.query('SELECT session_version FROM usuarios WHERE id=?', [accepted.user.id]);
+  assert.equal(Number(unchanged[0].session_version), Number(accepted.user.sessionVersion));
+  const acceptedAgain = await service.acceptInvitation(acceptance(existingMail));
+  assert.equal(acceptedAgain.user.id, accepted.user.id); assert.equal(acceptedAgain.user.role, 'empleado');
+  const [afterExisting] = await pool.query('SELECT COUNT(*) AS count FROM usuarios');
+  assert.equal(beforeExisting[0].count, afterExisting[0].count);
+  await assert.rejects(service.acceptInvitation(acceptance(existingMail)));
+  await pool.query('UPDATE admin_invitations SET created_at=DATE_SUB(NOW(), INTERVAL 2 MINUTE) WHERE invite_email=?', [payload.correo]);
+  const staleIndex = sent.length;
+  await service.resendExistingAccount(sponsorId, accepted.user.id);
+  await pool.query('UPDATE usuarios SET session_version=session_version+1 WHERE id=?', [accepted.user.id]);
+  await assert.rejects(service.acceptInvitation(acceptance(staleIndex)));
+  console.log('INVITACION_CUENTA_EXISTENTE_SIN_DUPLICADOS=OK\nINVITACION_ACEPTACION_Y_CAMBIO_DE_SESION=OK');
   stage = 'legacy_and_concurrency';
   const legacy = await service.requestInvitation(sponsorId, { ...payload, correo: `legacy-${suffix}@example.invalid` });
   await pool.query('UPDATE admin_invitations SET account_type=NULL, created_at=DATE_SUB(NOW(), INTERVAL 2 MINUTE) WHERE invitation_id=?', [legacy.invitationId]);

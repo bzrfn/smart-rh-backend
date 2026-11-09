@@ -1,3 +1,4 @@
+import { resendExistingAccountController } from './adminInvite.controller.js';
 import { listPendingInvitationsController, resendInvitationController } from './adminInvite.controller.js';
 import {
   Router,
@@ -38,3 +39,5 @@ adminInviteRoutes.post(
 
 adminInviteRoutes.get('/', authJwt, requireRole('admin'), listPendingInvitationsController);
 adminInviteRoutes.post('/:id/resend', authJwt, requireRole('admin'), resendInvitationController);
+
+adminInviteRoutes.post('/users/:userId/resend', authJwt, requireRole('admin'), resendExistingAccountController);

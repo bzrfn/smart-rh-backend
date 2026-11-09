@@ -25,3 +25,8 @@ La app móvil incluye confirmación estricta de mutaciones y consulta/reenvío d
 Pruebas automatizadas de autorización, enlaces reemplazados, bloqueo por aceptación concurrente, espera entre envíos, aislamiento y fallos SMTP. Pruebas React de búsqueda, reenvío, errores con datos conservados, cierre de Soporte, contratos y nómina, respuestas HTTP 200 con ok:false y navegación por teclado. Pruebas Python de publicación condicional, respaldo y restauración. La prueba SQL real se ejecuta en EC2 como condición del despliegue; no se presenta como ejecutada en el entorno de desarrollo.
 
 Referencia visual: diseño existente de SMART RH, tarjetas y controles azul/cian/verde, variables de tema y modal compartido. Cambios limitados a estado de operación, jerarquía del aviso, contraste heredado, foco y tamaño adaptable. La comprobación en navegador real no está disponible en el entorno de preparación; validar claro/oscuro y pantalla estrecha en el portal tras despliegue.
+
+
+## Corrección de cuentas existentes
+
+Reenviar invitación también está disponible para cuentas activas ya registradas, sin depender de una fila de invitación pendiente. El endpoint administrativo busca al destinatario por su id real, fija correo y rol desde la base y vincula el enlace al id y versión de sesión. Enviar no cambia contraseña, rol, perfil ni registros laborales. Al aceptar el enlace, se establece la contraseña elegida por el destinatario, se confirma el correo, se renueva la sesión y se conserva el mismo usuario. Los enlaces anteriores se revocan. Se rechazan cuentas desactivadas o cuyo correo, rol o versión de sesión cambió.
