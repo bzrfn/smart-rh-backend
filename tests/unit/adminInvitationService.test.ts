@@ -143,6 +143,7 @@ describe(
   'Admin invitation service',
   () => {
     const payload = {
+      tipo_cuenta: 'admin',
       correo:
         'invite@example.test',
 
@@ -159,7 +160,7 @@ describe(
         null,
 
       fecha_ingreso:
-        null,
+        '2026-11-09',
 
       dias_vacaciones_disponibles:
         12,

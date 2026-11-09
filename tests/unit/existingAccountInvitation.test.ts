@@ -51,7 +51,7 @@ describe('Existing account invitation SQL boundaries',()=>{
  it('creates an invitation for the matching existing account without inserting another user',async()=>{
   const {conn}=repositoryFixture();expect((await createAdminInvitation(input)).status).toBe('created');
   const insert=conn.query.mock.calls.find((call:any)=>call[0].includes('INSERT INTO admin_invitations'));
-  expect(insert[1].slice(-2)).toEqual([29,4]);expect(conn.query.mock.calls.some((call:any)=>call[0].includes('INSERT INTO usuarios'))).toBe(false);
+  expect(insert[1].slice(-3)).toEqual([29,4,0]);expect(conn.query.mock.calls.some((call:any)=>call[0].includes('INSERT INTO usuarios'))).toBe(false);
  });
  it('refuses to send if the user role or session changed after the service lookup',async()=>{
   const {conn}=repositoryFixture({account:{session_version:5}});expect((await createAdminInvitation(input)).status).toBe('invitation_unavailable');expect(conn.query.mock.calls.some((call:any)=>call[0].includes('INSERT INTO admin_invitations'))).toBe(false);

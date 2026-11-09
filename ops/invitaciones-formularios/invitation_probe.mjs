@@ -31,6 +31,7 @@ try {
     await pool.query('ALTER TABLE admin_invitations ADD COLUMN IF NOT EXISTS delivery_failed_at DATETIME DEFAULT NULL');
     await pool.query('ALTER TABLE admin_invitations ADD COLUMN IF NOT EXISTS existing_user_id INT DEFAULT NULL');
     await pool.query('ALTER TABLE admin_invitations ADD COLUMN IF NOT EXISTS existing_user_session_version INT DEFAULT NULL');
+    await pool.query('ALTER TABLE admin_invitations ADD COLUMN IF NOT EXISTS profile_completion_required TINYINT(1) NOT NULL DEFAULT 0');
     console.log('MIGRACION_ADITIVA=OK');
   }
   stage = 'stage_tables';
@@ -46,8 +47,9 @@ try {
   const { buildAdminInviteService } = await load('dist/modules/auth/adminInvite.service.js');
   const sent = [];
   const service = buildAdminInviteService({ sendInvitationEmail: async data => { sent.push(data); }, hashPassword: async () => 'NOT_A_LOGIN_HASH' });
-  const payload = { nombre: 'Prueba', apellido: 'Invitada', correo: `invite-${suffix}@example.invalid`, tipo_cuenta: 'empleado', dias_vacaciones_disponibles: 12 };
-  const acceptance = index => { const url = new URL(sent[index].acceptUrl); const params = new URLSearchParams(url.hash.includes('?') ? url.hash.split('?')[1] : url.search); return { invitationId: params.get('invitationId'), token: params.get('token'), tipoCuenta: params.get('tipoCuenta'), contrasena: 'Only-Disposable-Probe-123!' }; };
+  const profile = { nombre: 'Prueba', apellido: 'Invitada', telefono: '+52 722 123 4567', direccion: 'Domicilio de prueba aislada 123' };
+  const payload = { fecha_ingreso: '2026-11-09', correo: `invite-${suffix}@example.invalid`, tipo_cuenta: 'empleado', dias_vacaciones_disponibles: 12 };
+  const acceptance = index => { const url = new URL(sent[index].acceptUrl); const params = new URLSearchParams(url.hash.includes('?') ? url.hash.split('?')[1] : url.search); return { invitationId: params.get('invitationId'), token: params.get('token'), tipoCuenta: params.get('tipoCuenta'), contrasena: 'Only-Disposable-Probe-123!', perfil: profile }; };
   stage = 'create_resend';
   const first = await service.requestInvitation(sponsorId, payload);
   assert.equal(sent.length, 1);
@@ -63,11 +65,21 @@ try {
   console.log('INVITACION_REENVIO_Y_PRIVACIDAD=OK');
   stage = 'acceptance';
   await assert.rejects(service.acceptInvitation(acceptance(0)));
-  const accepted = await service.acceptInvitation(acceptance(1)); assert.equal(accepted.user.role, 'empleado');
+  const preview = await service.inspectInvitation(acceptance(1));
+  assert.equal(preview.invitation.correo, payload.correo); assert.equal(preview.invitation.requiresProfileCompletion, true);
+  assert.equal(preview.invitation.diasVacaciones, 12);
+  await assert.rejects(service.inspectInvitation({ ...acceptance(1), token: 'a'.repeat(64) }));
+  const withoutProfile = { ...acceptance(1) }; delete withoutProfile.perfil;
+  await assert.rejects(service.acceptInvitation(withoutProfile));
+  const accepted = await service.acceptInvitation({ ...acceptance(1), rol_id: roles[0].id, correo: 'ignored@example.invalid', fecha_ingreso: '2000-01-01', dias_vacaciones_disponibles: 999 }); assert.equal(accepted.user.role, 'empleado');
   await assert.rejects(service.acceptInvitation(acceptance(1)));
   await assert.rejects(service.resendInvitation(sponsorId, replacement.invitationId, {}));
   assert.equal((await service.pendingInvitations(sponsorId)).length, 0);
   console.log('INVITACION_ENLACE_ANTERIOR_INVALIDADO=OK\nINVITACION_ACEPTADA_NO_REENVIABLE=OK');
+  const [storedProfile] = await pool.query(`SELECT nombre, apellido, telefono, direccion, correo, DATE_FORMAT(fecha_ingreso, '%Y-%m-%d') AS fecha, dias_vacaciones_disponibles FROM usuarios WHERE id=?`, [accepted.user.id]);
+  assert.equal(storedProfile[0].nombre, profile.nombre); assert.equal(storedProfile[0].telefono, profile.telefono); assert.equal(storedProfile[0].direccion, profile.direccion);
+  assert.equal(storedProfile[0].correo, payload.correo); assert.equal(storedProfile[0].fecha, payload.fecha_ingreso); assert.equal(Number(storedProfile[0].dias_vacaciones_disponibles), 12);
+  console.log('INVITACION_PERFIL_COMPLETO_Y_CAMPOS_ASIGNADOS=OK');
   stage = 'existing_account';
   await pool.query('UPDATE admin_invitations SET created_at=DATE_SUB(NOW(), INTERVAL 2 MINUTE) WHERE invite_email=?', [payload.correo]);
   const [beforeExisting] = await pool.query('SELECT COUNT(*) AS count FROM usuarios');
@@ -87,6 +99,12 @@ try {
   await pool.query('UPDATE usuarios SET session_version=session_version+1 WHERE id=?', [accepted.user.id]);
   await assert.rejects(service.acceptInvitation(acceptance(staleIndex)));
   console.log('INVITACION_CUENTA_EXISTENTE_SIN_DUPLICADOS=OK\nINVITACION_ACEPTACION_Y_CAMBIO_DE_SESION=OK');
+  stage = 'self_service_admin';
+  const adminIndex=sent.length;
+  await service.requestInvitation(sponsorId, { correo:`admin-${suffix}@example.invalid`, tipo_cuenta:'admin', fecha_ingreso:'2026-11-09', dias_vacaciones_disponibles:999 });
+  const adminAccepted=await service.acceptInvitation(acceptance(adminIndex)); assert.equal(adminAccepted.user.role,'admin');
+  const [adminRows]=await pool.query('SELECT dias_vacaciones_disponibles FROM usuarios WHERE id=?',[adminAccepted.user.id]); assert.equal(Number(adminRows[0].dias_vacaciones_disponibles),12);
+  console.log('INVITACION_ADMIN_AUTOGESTION=OK');
   stage = 'legacy_and_concurrency';
   const legacy = await service.requestInvitation(sponsorId, { ...payload, correo: `legacy-${suffix}@example.invalid` });
   await pool.query('UPDATE admin_invitations SET account_type=NULL, created_at=DATE_SUB(NOW(), INTERVAL 2 MINUTE) WHERE invitation_id=?', [legacy.invitationId]);

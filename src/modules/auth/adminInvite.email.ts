@@ -414,7 +414,7 @@ function buildAdminInvitationHtml(
                               line-height:1.7;
                             "
                           >
-                            Define tu propia contraseña para completar
+                            Completa tus datos y crea tu contraseña para terminar
                             la creación de tu cuenta.
                           </p>
 
@@ -918,7 +918,7 @@ export async function sendAdminInvitationEmail(
         '',
         `Abrir invitación: ${acceptUrl}`,
         '',
-        'Tú establecerás tu propia contraseña durante la activación.',
+        'Completa tus datos personales y crea tu contraseña durante la activación.',
         '',
         'Esta invitación es personal y de un solo uso.',
         '',
