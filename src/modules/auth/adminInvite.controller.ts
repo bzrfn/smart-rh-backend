@@ -1,3 +1,4 @@
+import { correctPendingInvitationEmail, cancelPendingAdminInvite } from './adminInvite.service.js';
 import { inspectAdminInvite } from './adminInvite.service.js';
 import { resendExistingAccountInvitation } from './adminInvite.service.js';
 import { getPendingInvitations, resendAdminInvitation } from './adminInvite.service.js';
@@ -90,4 +91,13 @@ export async function inspectInvitationController(req: AuthRequest, res: Respons
   res.setHeader('Referrer-Policy', 'no-referrer');
   try { res.json({ ok: true, ...await inspectAdminInvite(req.body) }); }
   catch (error) { next(error); }
+}
+
+export async function correctInvitationEmailController(req: AuthRequest, res: Response, next: NextFunction) {
+  try { res.status(201).json({ok:true,...await correctPendingInvitationEmail(req.auth?.userId,req.params.id,req.body,req.ip)}); }
+  catch(error) { next(error); }
+}
+export async function cancelPendingInvitationController(req: AuthRequest, res: Response, next: NextFunction) {
+  try { res.json({ok:true,...await cancelPendingAdminInvite(req.auth?.userId,req.params.id)}); }
+  catch(error) { next(error); }
 }

@@ -38,6 +38,7 @@ export type CreateAdminInvitationInput = {
   expiresInMinutes: number;
   accountType?: 'admin' | 'empleado';
   replacesInvitationId?: string;
+  replacesInvitationEmail?: string;
   profileCompletionRequired?: boolean;
   existingUserId?: number;
   existingUserSessionVersion?: number;
@@ -425,16 +426,13 @@ export async function createAdminInvitation(
   const conn =
     await pool.getConnection();
 
-  let lockName:
-    string | null =
-      null;
+  const emailLocks: string[] = [];
+  const originalEmail = normalizeEmail(input.replacesInvitationEmail || inviteEmail);
+  const emailChanging = Boolean(input.replacesInvitationId && originalEmail !== inviteEmail);
 
   try {
-    lockName =
-      await acquireEmailLock(
-        conn,
-        inviteEmail
-      );
+    // Every creator/acceptor uses the same per-email lock; sort both keys to prevent opposite corrections from deadlocking.
+    for (const email of [...new Set([inviteEmail, originalEmail])].sort()) emailLocks.push(await acquireEmailLock(conn, email));
 
     await conn.beginTransaction();
 
@@ -502,28 +500,34 @@ export async function createAdminInvitation(
       }
       const [recent] = await conn.query(`SELECT invitation_id FROM admin_invitations WHERE invite_email=? AND created_at>DATE_SUB(NOW(), INTERVAL 60 SECOND) ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [inviteEmail]);
       if ((recent as any[]).length) { await conn.commit(); return { status: 'cooldown' }; }
-      await conn.query(`UPDATE admin_invitations SET revoked_at=NOW(), delivery_failed_at=NULL WHERE invite_email=? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL)`, [inviteEmail]);
+      await conn.query(`UPDATE admin_invitations SET revoked_at=NOW(), delivery_failed_at=NULL WHERE invite_email=? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL)`, [originalEmail]);
     } else if ((existingUsers as any[]).length) {
       await conn.commit(); return { status: 'user_exists' };
     }
 
     if (input.replacesInvitationId) {
       const [targets] = await conn.query(
-        `SELECT invitation_id, account_type, created_at, accepted_at, revoked_at, delivery_failed_at FROM admin_invitations
+        `SELECT invitation_id, account_type, created_at, accepted_at, revoked_at, delivery_failed_at, existing_user_id FROM admin_invitations
          WHERE invitation_id = ? AND invite_email = ? LIMIT 1 FOR UPDATE`,
-        [input.replacesInvitationId, inviteEmail]
+        [input.replacesInvitationId, originalEmail]
       );
       const target = (targets as any[])[0];
       if (!target || target.accepted_at || (target.revoked_at && !target.delivery_failed_at) ||
-          (target.account_type && target.account_type !== input.accountType)) {
+          (target.account_type && target.account_type !== input.accountType) || (emailChanging && target.existing_user_id)) {
         await conn.commit(); return { status: 'invitation_unavailable' };
       }
-      if (new Date(target.created_at).getTime() > Date.now() - 60000) {
+      if (!emailChanging && new Date(target.created_at).getTime() > Date.now() - 60000) {
         await conn.commit(); return { status: 'cooldown' };
+      }
+      if (emailChanging) {
+        const [conflicts] = await conn.query(`SELECT invitation_id FROM admin_invitations
+          WHERE invite_email=? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL)
+          AND invitation_id<>? LIMIT 1 FOR UPDATE`, [inviteEmail, input.replacesInvitationId]);
+        if ((conflicts as any[]).length) { await conn.commit(); return { status: 'active' }; }
       }
       await conn.query(
         `UPDATE admin_invitations SET revoked_at = NOW(), delivery_failed_at = NULL
-         WHERE invite_email = ? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL)`, [inviteEmail]
+         WHERE invite_email = ? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL)`, [originalEmail]
       );
     }
 
@@ -676,10 +680,7 @@ export async function createAdminInvitation(
     throw error;
 
   } finally {
-    await releaseEmailLock(
-      conn,
-      lockName
-    );
+    for (const name of emailLocks.reverse()) await releaseEmailLock(conn, name);
 
     conn.release();
   }
@@ -1312,6 +1313,7 @@ export async function acceptAdminInvitation(
 }
 
 export type PendingInvitation = {
+  existing_user_id?: number | null;
   profile_completion_required: number;
   invitation_id: string; invite_email: string; nombre: string; apellido: string;
   account_type: 'admin' | 'empleado' | null;
@@ -1336,7 +1338,7 @@ export async function listPendingInvitations(): Promise<PendingInvitation[]> {
 export async function findPendingInvitation(id: string): Promise<PendingInvitation | null> {
   if (!HEX_64.test(id)) return null;
   const [rows] = await pool.query(`
-    SELECT invitation_id, invite_email, nombre, apellido, account_type,
+    SELECT invitation_id, invite_email, nombre, apellido, account_type, existing_user_id,
       telefono, direccion, fecha_ingreso, profile_completion_required, dias_vacaciones_disponibles, created_at, expires_at, delivery_failed_at
     FROM admin_invitations WHERE invitation_id = ? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL) LIMIT 1
   `, [id]);
@@ -1371,4 +1373,27 @@ export async function inspectAdminInvitation(id: string, candidateHmac: string, 
     diasVacaciones:requiresProfileCompletion?INITIAL_INVITATION_VACATION_DAYS:Number(item.dias_vacaciones_disponibles),
     requiresProfileCompletion, existingAccount:Boolean(item.existing_user_id),
     perfil:{nombre:item.nombre||'',apellido:item.apellido||'',telefono:item.telefono||'',direccion:item.direccion||''} };
+}
+
+export async function cancelPendingInvitation(sponsorId: number, sponsorVersion: number, invitationId: string): Promise<'ok' | 'invalid' | 'sponsor_invalid'> {
+  if (!HEX_64.test(invitationId)) return 'invalid';
+  const [rows] = await pool.query('SELECT invite_email FROM admin_invitations WHERE invitation_id=? LIMIT 1', [invitationId]);
+  const email=normalizeEmail((rows as any[])[0]?.invite_email);
+  if (!email) return 'invalid';
+  const conn=await pool.getConnection();let lock: string | null=null;
+  try {
+    lock=await acquireEmailLock(conn,email);await conn.beginTransaction();
+    const sponsor=await lockSponsor(conn,sponsorId);
+    if (!isEligibleSponsor(sponsor) || Number(sponsor?.session_version)!==sponsorVersion) { await conn.commit();return 'sponsor_invalid'; }
+    const [targets]=await conn.query(`SELECT invitation_id, invite_email, accepted_at, revoked_at, delivery_failed_at
+      FROM admin_invitations WHERE invitation_id=? AND invite_email=? LIMIT 1 FOR UPDATE`,[invitationId,email]);
+    const target=(targets as any[])[0];
+    if (!target || target.accepted_at || (target.revoked_at && !target.delivery_failed_at)) { await conn.commit();return 'invalid'; }
+    // Include older pending generations so canceling the latest row cannot uncover an older draft in the listing.
+    const [changed]=await conn.query(`UPDATE admin_invitations SET revoked_at=COALESCE(revoked_at,NOW()), delivery_failed_at=NULL
+      WHERE invite_email=? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL)`,[email]);
+    if (Number((changed as any).affectedRows)<1) throw new Error('No se confirmó la cancelación de la invitación');
+    await conn.commit();return 'ok';
+  } catch(error) { await conn.rollback();throw error; }
+  finally { await releaseEmailLock(conn,lock);conn.release(); }
 }

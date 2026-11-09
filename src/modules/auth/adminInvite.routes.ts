@@ -1,3 +1,4 @@
+import { correctInvitationEmailController, cancelPendingInvitationController } from './adminInvite.controller.js';
 import { inspectInvitationController } from './adminInvite.controller.js';
 import { resendExistingAccountController } from './adminInvite.controller.js';
 import { listPendingInvitationsController, resendInvitationController } from './adminInvite.controller.js';
@@ -44,3 +45,6 @@ adminInviteRoutes.post('/:id/resend', authJwt, requireRole('admin'), resendInvit
 adminInviteRoutes.post('/users/:userId/resend', authJwt, requireRole('admin'), resendExistingAccountController);
 
 adminInviteRoutes.post('/inspect', inspectInvitationController);
+
+adminInviteRoutes.post('/:id/correct-email', authJwt, requireRole('admin'), correctInvitationEmailController);
+adminInviteRoutes.post('/:id/cancel', authJwt, requireRole('admin'), cancelPendingInvitationController);
