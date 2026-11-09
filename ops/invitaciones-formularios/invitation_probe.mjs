@@ -164,6 +164,8 @@ try {
   assert(failurePending.find(item=>item.invite_email===correctedFailureEmail)?.delivery_failed_at);
   assert(!failurePending.some(item=>item.invitation_id===failureSource.invitationId));
   console.log('INVITACION_CORREO_CORREGIDO_FALLO_SMTP_RECUPERABLE=OK');
+  stage='permanent_deletion';
+  await removalProbe();
   passed = true;
 } catch (error) {
   console.log(`INVITATION_PROBE=ERROR; stage=${stage}; type=${String(error?.name || 'Error').replace(/[^a-zA-Z]/g,'')}`);
@@ -176,3 +178,57 @@ try {
   if (passed) console.log('LIMPIEZA_PRUEBAS=OK\nINTEGRACION_INVITACIONES_REAL=OK');
 }
 process.exitCode = passed ? 0 : 1;
+
+async function removalProbe() {
+  const mongoose=(await import('mongoose')).default;
+  const {mkdtemp,rm,readFile}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os'); const {join}=await import('node:path');
+  const {deserialize}=await import('node:v8');
+  const names={usuarios:`smarth_probe_delete_users_${suffix}`,roles:`smarth_probe_delete_roles_${suffix}`,asistencias:`smarth_probe_delete_attendance_${suffix}`};
+  const allowed=Object.values(names).map(name=>`'${name}'`).join(',');
+  const mongoName=`smarth_probe_delete_${suffix}`;
+  const backup=await mkdtemp(join(tmpdir(),'smart-rh-removal-probe-'));
+  let mongoConnection;
+  try {
+    await pool.query(`CREATE TABLE ${names.roles} (id INT PRIMARY KEY,nombre VARCHAR(30)) ENGINE=InnoDB`);
+    await pool.query(`CREATE TABLE ${names.usuarios} (id INT PRIMARY KEY,correo VARCHAR(191),rol_id INT,activo TINYINT,FOREIGN KEY (rol_id) REFERENCES ${names.roles}(id)) ENGINE=InnoDB`);
+    await pool.query(`CREATE TABLE ${names.asistencias} (id INT PRIMARY KEY,usuario_id INT,FOREIGN KEY (usuario_id) REFERENCES ${names.usuarios}(id)) ENGINE=InnoDB`);
+    await pool.query(`INSERT INTO ${names.roles} VALUES (1,'admin'),(2,'empleado')`);
+    const email=`remove-${suffix}@example.invalid`;
+    await pool.query(`INSERT INTO ${names.usuarios} VALUES (8000001,?,1,1),(8000002,?,2,0)`,[`admin-${suffix}@example.invalid`,email]);
+    await pool.query(`INSERT INTO ${names.asistencias} VALUES (1,8000001),(2,8000002)`);
+    mongoConnection=await mongoose.createConnection(process.env.MONGO_URI,{dbName:process.env.MONGO_DB||'RRHH',serverSelectionTimeoutMS:10000}).asPromise();
+    const realDb=mongoConnection.db,collection=realDb.collection(mongoName);
+    await collection.insertMany([{usuario_id:8000001,text:'keep'},{usuario_id:8000002,text:'remove'}]);
+    const isolatedPool={getConnection:async()=>{
+      const connection=await pool.getConnection();
+      return new Proxy(connection,{get(target,key){
+        if(key==='query')return async(sql,...args)=>{
+          if(sql.includes('information_schema.COLUMNS'))return connection.query(sql+` AND TABLE_NAME IN (${allowed})`,...args);
+          if(sql.includes("CONSTRAINT_NAME='PRIMARY'"))return connection.query(sql.replace(' ORDER BY',` AND TABLE_NAME IN (${allowed}) ORDER BY`),...args);
+          if(sql.includes('REFERENTIAL_CONSTRAINTS'))return connection.query(sql+` AND k.TABLE_NAME IN (${allowed})`,...args);
+          if(sql.includes('information_schema.TABLES'))return connection.query(sql+` AND TABLE_NAME IN (${allowed})`,...args);
+          return connection.query(sql.replace(/\b(usuarios|roles)\b/g,name=>names[name]),...args);
+        };
+        const value=target[key];return typeof value==='function'?value.bind(target):value;
+      }});
+    }};
+    const {buildPermanentDeletionService}=await load('dist/modules/users/users.permanent-deletion.js');
+    const files=new Map([['profiles/perfil_8000002.png',Buffer.from('disposable-profile')],['profiles/perfil_8000001.png',Buffer.from('keep')]]);
+    const service=buildPermanentDeletionService({usersTable:names.usuarios,pool:isolatedPool,mongoDb:()=>({listCollections:()=>({toArray:async()=>[{name:mongoName}]}),collection:name=>{assert.equal(name,mongoName);return collection;}}),backupRoot:backup,storage:{list:async()=>[...files.keys()],read:async key=>files.has(key)?{body:files.get(key),contentType:'image/png'}:null,remove:async key=>{files.delete(key);}}});
+    await assert.rejects(service(8000002,8000001,'wrong@example.invalid'));
+    await assert.rejects(service(8000001,8000001,`admin-${suffix}@example.invalid`));
+    const result=await service(8000002,8000001,email);assert.equal(result.cleanupPending,false);
+    const [usersAfter]=await pool.query(`SELECT id FROM ${names.usuarios}`);assert.deepEqual(usersAfter.map(row=>row.id),[8000001]);
+    const [attendanceAfter]=await pool.query(`SELECT usuario_id FROM ${names.asistencias}`);assert.deepEqual(attendanceAfter.map(row=>row.usuario_id),[8000001]);
+    assert.equal(await collection.countDocuments({usuario_id:8000002}),0);assert.equal(await collection.countDocuments({usuario_id:8000001}),1);
+    const archive=deserialize(await readFile(join(backup,result.operationId,'archive.v8')));assert(archive.sql.find(table=>table.name===names.usuarios).rows.some(row=>row.correo===email));
+    assert.equal(files.has('profiles/perfil_8000002.png'),false);assert.equal(files.has('profiles/perfil_8000001.png'),true);
+    console.log('INTEGRACION_ELIMINACION_SQL_MONGO_RESPALDO=OK');
+  } finally {
+    let clean=true;
+    if(mongoConnection){try{await mongoConnection.db.collection(mongoName).drop();}catch(error){if(error.codeName!=='NamespaceNotFound')clean=false;}await mongoConnection.close();}
+    for(const name of [names.asistencias,names.usuarios,names.roles])try{await pool.query(`DROP TABLE IF EXISTS ${name}`);}catch{clean=false;}
+    await rm(backup,{recursive:true,force:true});assert(clean,'DELETE_PROBE_CLEANUP_FAILED');
+  }
+}

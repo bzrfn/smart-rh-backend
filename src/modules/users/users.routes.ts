@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authJwt } from '../../middlewares/authJwt.js';
 import { requireRole } from '../../middlewares/requireRole.js';
 import {
+  permanentlyDeleteUserController,
   createUserController,
   deleteOwnAccountController,
   deleteUserController,
@@ -23,3 +24,5 @@ userRoutes.put('/:id', authJwt, requireRole('admin'), updateUserController);
 userRoutes.patch('/:id/active', authJwt, requireRole('admin'), setActiveController);
 userRoutes.patch('/:id/vacation-days', authJwt, requireRole('admin'), setVacationDaysController);
 userRoutes.delete('/:id', authJwt, requireRole('admin'), deleteUserController);
+
+userRoutes.post('/:id/permanent-deletion', authJwt, requireRole('admin'), permanentlyDeleteUserController);
