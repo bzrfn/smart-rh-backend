@@ -1,3 +1,4 @@
+import { cancelPendingInvitation } from './adminInvite.repository.js';
 import { INITIAL_INVITATION_VACATION_DAYS, validateInvitationEntryDate, validateInvitationProfile } from './adminInvite.profile.js';
 import { inspectAdminInvitation } from './adminInvite.repository.js';
 import { findPendingInvitation, listPendingInvitations } from './adminInvite.repository.js';
@@ -49,6 +50,7 @@ type SponsorUser = {
 
 export type AdminInviteDependencies = {
   inspectInvitation: typeof inspectAdminInvitation;
+  cancelInvitation: typeof cancelPendingInvitation;
   findPendingInvitation: typeof findPendingInvitation;
   listPendingInvitations: typeof listPendingInvitations;
   findSponsor:
@@ -87,6 +89,7 @@ export type AdminInviteDependencies = {
 const defaultDependencies:
 AdminInviteDependencies = {
   inspectInvitation: inspectAdminInvitation,
+  cancelInvitation: cancelPendingInvitation,
   findExistingAccount: findUserById,
   findPendingInvitation,
   listPendingInvitations,
@@ -400,7 +403,8 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
     requestIp?: unknown,
     replacesInvitationId?: string,
     existingAccount?: { id: number; session_version: number },
-    legacyProfile = false
+    legacyProfile = false,
+    replacesInvitationEmail?: string
   ) {
     const sponsorUserId =
       Number(
@@ -504,6 +508,7 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
           ADMIN_INVITE_EXPIRES_MINUTES,
         accountType: inviteRole,
         replacesInvitationId,
+        replacesInvitationEmail,
         profileCompletionRequired,
         existingUserId: existingAccount?.id,
         existingUserSessionVersion: existingAccount?.session_version,
@@ -514,7 +519,7 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
       'active'
     ) {
       throw new AppError(
-        'Ya existe una invitación activa para este correo',
+        replacesInvitationEmail ? 'Ya existe una invitación pendiente para ese correo. Busca esa invitación para reenviarla o cancelarla.' : 'Ya existe una invitación activa para este correo',
         409
       );
     }
@@ -648,6 +653,35 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
     }, requestIp, id, undefined, !Number(original.profile_completion_required));
   }
 
+  async function correctInvitationEmail(sponsorUserId: unknown, rawId: unknown, payload: any, requestIp?: unknown) {
+    const sponsor=await deps.findSponsor(Number(sponsorUserId)) as SponsorUser | null;
+    if (!isEligibleSponsor(sponsor)) throw new AppError('Administrador no autorizado',403);
+    const id=String(rawId||'');if(!isValidAdminInviteId(id)) throw new AppError('Invitación inválida',400);
+    const original=await deps.findPendingInvitation(id);
+    if(!original || original.existing_user_id) throw new AppError('Solo se puede corregir una invitación pendiente de una cuenta nueva. Actualiza el listado.',409);
+    const email=validateEmail(payload?.correo);
+    if(email===normalizeEmail(original.invite_email)) throw new AppError('Escribe un correo distinto o utiliza Reenviar invitación.',400);
+    if(!original.account_type && !['admin','empleado'].includes(payload?.tipo_cuenta)) throw new AppError('Confirma el rol de esta invitación anterior.',400);
+    if(original.account_type && payload?.tipo_cuenta && payload.tipo_cuenta!==original.account_type) throw new AppError('Corregir el correo no permite cambiar el rol.',409);
+    const role=original.account_type||validateInviteRole(payload?.tipo_cuenta);
+    const result=await requestInvitation(sponsorUserId,{
+      correo:email,tipo_cuenta:role,nombre:original.nombre,apellido:original.apellido,telefono:original.telefono,direccion:original.direccion,
+      fecha_ingreso:original.fecha_ingreso instanceof Date?original.fecha_ingreso.toISOString().slice(0,10):original.fecha_ingreso?String(original.fecha_ingreso).slice(0,10):null,
+      dias_vacaciones_disponibles:original.dias_vacaciones_disponibles,
+    },requestIp,id,undefined,!Number(original.profile_completion_required),original.invite_email);
+    return {...result,message:'Correo corregido e invitación enviada correctamente. El enlace anterior quedó invalidado.'};
+  }
+
+  async function cancelInvitation(sponsorUserId: unknown, rawId: unknown) {
+    const sponsor=await deps.findSponsor(Number(sponsorUserId)) as SponsorUser | null;
+    if(!isEligibleSponsor(sponsor)) throw new AppError('Administrador no autorizado',403);
+    const id=String(rawId||'');if(!isValidAdminInviteId(id))throw new AppError('Invitación inválida',400);
+    const result=await deps.cancelInvitation(sponsor.id,Number(sponsor.session_version),id);
+    if(result==='sponsor_invalid')throw new AppError('La sesión administrativa ya no es válida',401);
+    if(result!=='ok')throw new AppError('La invitación ya fue aceptada, cancelada o sustituida. Actualiza el listado.',409);
+    return {message:'Invitación cancelada correctamente. El enlace ya no permite activar una cuenta.'};
+  }
+
   async function acceptInvitation(
     payload: any
   ) {
@@ -756,6 +790,8 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
   return {
     requestInvitation,
     inspectInvitation,
+    correctInvitationEmail,
+    cancelInvitation,
     acceptInvitation,
     pendingInvitations,
     resendExistingAccount,
@@ -781,3 +817,6 @@ export const resendAdminInvitation = defaultService.resendInvitation;
 export const resendExistingAccountInvitation = defaultService.resendExistingAccount;
 
 export const inspectAdminInvite = defaultService.inspectInvitation;
+
+export const correctPendingInvitationEmail = defaultService.correctInvitationEmail;
+export const cancelPendingAdminInvite = defaultService.cancelInvitation;
