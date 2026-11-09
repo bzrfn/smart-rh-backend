@@ -37,6 +37,8 @@ export type CreateAdminInvitationInput = {
   expiresInMinutes: number;
   accountType?: 'admin' | 'empleado';
   replacesInvitationId?: string;
+  existingUserId?: number;
+  existingUserSessionVersion?: number;
 };
 
 
@@ -112,6 +114,8 @@ type InvitationRow = {
   accepted_user_id: number | null;
 
   revoked_at: Date | null;
+  existing_user_id?: number | null;
+  existing_user_session_version?: number | null;
 };
 
 
@@ -468,7 +472,7 @@ export async function createAdminInvitation(
       await conn.query(
         `
           SELECT
-            id
+            id, rol_id, activo, session_version, (SELECT nombre FROM roles WHERE id=usuarios.rol_id) AS role
 
           FROM
             usuarios
@@ -485,18 +489,17 @@ export async function createAdminInvitation(
         ]
       );
 
-    if (
-      (
-        existingUsers as any[]
-      ).length >
-        0
-    ) {
-      await conn.commit();
-
-      return {
-        status:
-          'user_exists',
-      };
+    const existing = (existingUsers as any[])[0];
+    if (input.existingUserId) {
+      if (!existing || Number(existing.id) !== input.existingUserId || Number(existing.activo) !== 1 ||
+          Number(existing.session_version) !== input.existingUserSessionVersion || String(existing.role).toLowerCase() !== input.accountType) {
+        await conn.commit(); return { status: 'invitation_unavailable' };
+      }
+      const [recent] = await conn.query(`SELECT invitation_id FROM admin_invitations WHERE invite_email=? AND created_at>DATE_SUB(NOW(), INTERVAL 60 SECOND) ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, [inviteEmail]);
+      if ((recent as any[]).length) { await conn.commit(); return { status: 'cooldown' }; }
+      await conn.query(`UPDATE admin_invitations SET revoked_at=NOW(), delivery_failed_at=NULL WHERE invite_email=? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL)`, [inviteEmail]);
+    } else if ((existingUsers as any[]).length) {
+      await conn.commit(); return { status: 'user_exists' };
     }
 
     if (input.replacesInvitationId) {
@@ -593,7 +596,8 @@ export async function createAdminInvitation(
           request_ip_hash,
 
           expires_at,
-          account_type
+          account_type,
+          existing_user_id, existing_user_session_version
         )
         VALUES (
           ?,
@@ -603,7 +607,7 @@ export async function createAdminInvitation(
           ?, ?, ?,
           ?,
           ?,
-          ?, ?
+          ?, ?, ?, ?
         )
       `,
       [
@@ -644,6 +648,7 @@ export async function createAdminInvitation(
 
         expiresAt,
         input.accountType || null,
+        input.existingUserId || null, input.existingUserSessionVersion ?? null,
       ]
     );
 
@@ -870,7 +875,7 @@ export async function acceptAdminInvitation(
             accepted_at,
             accepted_user_id,
 
-            revoked_at
+            revoked_at, existing_user_id, existing_user_session_version
 
           FROM
             admin_invitations
@@ -991,6 +996,22 @@ export async function acceptAdminInvitation(
           invitation.invite_email,
         ]
       );
+
+    if (invitation.existing_user_id) {
+      const [targets] = await conn.query(`SELECT u.id, u.correo, u.activo, u.session_version, r.nombre AS role FROM usuarios u JOIN roles r ON r.id=u.rol_id WHERE u.id=? FOR UPDATE`, [invitation.existing_user_id]);
+      const target = (targets as any[])[0];
+      if (!target || (existingUsers as any[]).length !== 1 || Number((existingUsers as any[])[0].id) !== Number(target.id) ||
+          normalizeEmail(target.correo) !== normalizeEmail(invitation.invite_email) || Number(target.activo) !== 1 ||
+          Number(target.session_version) !== Number(invitation.existing_user_session_version) || String(target.role).toLowerCase() !== inviteRole) {
+        await conn.commit(); return { status: 'invalid' };
+      }
+      const [updated] = await conn.query(`UPDATE usuarios SET contrasena=?, email_verificado=1, session_version=session_version+1, updated_at=NOW() WHERE id=? AND session_version=? AND activo=1`, [passwordHash, target.id, target.session_version]);
+      if (Number((updated as any).affectedRows) !== 1) throw new Error('La cuenta cambió durante la aceptación');
+      const [consumed] = await conn.query(`UPDATE admin_invitations SET accepted_at=NOW(), accepted_user_id=? WHERE invitation_id=? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>NOW()`, [target.id, invitationId]);
+      if (Number((consumed as any).affectedRows) !== 1) throw new Error('La invitación cambió durante la aceptación');
+      await conn.commit();
+      return { status: 'ok', user: { id: Number(target.id), correo: target.correo, role: inviteRole, sessionVersion: Number(target.session_version)+1 } };
+    }
 
     if (
       (

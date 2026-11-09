@@ -50,6 +50,7 @@ export type AdminInviteDependencies = {
   listPendingInvitations: typeof listPendingInvitations;
   findSponsor:
     typeof findUserById;
+  findExistingAccount: typeof findUserById;
 
   generateInvitationId:
     typeof generateAdminInviteId;
@@ -82,6 +83,7 @@ export type AdminInviteDependencies = {
 
 const defaultDependencies:
 AdminInviteDependencies = {
+  findExistingAccount: findUserById,
   findPendingInvitation,
   listPendingInvitations,
   findSponsor:
@@ -392,7 +394,8 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
     sponsorUserIdInput: unknown,
     payload: any,
     requestIp?: unknown,
-    replacesInvitationId?: string
+    replacesInvitationId?: string,
+    existingAccount?: { id: number; session_version: number }
   ) {
     const sponsorUserId =
       Number(
@@ -525,6 +528,8 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
           ADMIN_INVITE_EXPIRES_MINUTES,
         accountType: inviteRole,
         replacesInvitationId,
+        existingUserId: existingAccount?.id,
+        existingUserSessionVersion: existingAccount?.session_version,
       });
 
     if (
@@ -566,12 +571,14 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
       throw new AppError('Espera un minuto entre reenvíos de una misma invitación.', 429);
     }
 
-    const acceptUrl =
+    let acceptUrl =
       buildAcceptUrl(
         invitationId,
         token,
         inviteRole
       );
+
+    if (existingAccount) acceptUrl += "&existingAccount=1";
 
     try {
       await deps.sendInvitationEmail({
@@ -616,6 +623,24 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
     };
   }
 
+
+  async function resendExistingAccount(sponsorUserId: unknown, targetId: unknown, requestIp?: unknown) {
+    const sponsor = await deps.findSponsor(Number(sponsorUserId)) as SponsorUser | null;
+    if (!isEligibleSponsor(sponsor)) throw new AppError('Administrador no autorizado', 403);
+    const id = Number(targetId);
+    if (!Number.isSafeInteger(id) || id<=0) throw new AppError('Usuario inválido', 400);
+    const target = await deps.findExistingAccount(id);
+    if (!target || Number(target.activo)!==1) throw new AppError('La cuenta no existe o está desactivada.', 409);
+    const role = String(target.rol_nombre || '').toLowerCase();
+    const entryDate: unknown = target.fecha_ingreso;
+    if (!['admin', 'empleado'].includes(role)) throw new AppError('El rol de la cuenta no admite invitaciones.', 409);
+    return requestInvitation(sponsorUserId, {
+      correo: target.correo, nombre: target.nombre, apellido: target.apellido,
+      telefono: target.telefono, direccion: target.direccion,
+      fecha_ingreso: entryDate instanceof Date ? entryDate.toISOString().slice(0,10) : entryDate ? String(entryDate).slice(0,10) : null,
+      dias_vacaciones_disponibles: target.dias_vacaciones_disponibles ?? 12, tipo_cuenta: role,
+    }, requestIp, undefined, { id: Number(target.id), session_version: Number(target.session_version) });
+  }
 
   async function pendingInvitations(sponsorUserId: unknown) {
     const sponsor = await deps.findSponsor(Number(sponsorUserId)) as SponsorUser | null;
@@ -745,6 +770,7 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
     requestInvitation,
     acceptInvitation,
     pendingInvitations,
+    resendExistingAccount,
     resendInvitation,
   };
 }
@@ -763,3 +789,5 @@ export const acceptAdminInvite =
 
 export const getPendingInvitations = defaultService.pendingInvitations;
 export const resendAdminInvitation = defaultService.resendInvitation;
+
+export const resendExistingAccountInvitation = defaultService.resendExistingAccount;
