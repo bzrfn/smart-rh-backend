@@ -30,3 +30,15 @@ Referencia visual: diseño existente de SMART RH, tarjetas y controles azul/cian
 ## Corrección de cuentas existentes
 
 Reenviar invitación también está disponible para cuentas activas ya registradas, sin depender de una fila de invitación pendiente. El endpoint administrativo busca al destinatario por su id real, fija correo y rol desde la base y vincula el enlace al id y versión de sesión. Enviar no cambia contraseña, rol, perfil ni registros laborales. Al aceptar el enlace, se establece la contraseña elegida por el destinatario, se confirma el correo, se renueva la sesión y se conserva el mismo usuario. Los enlaces anteriores se revocan. Se rechazan cuentas desactivadas o cuyo correo, rol o versión de sesión cambió.
+
+## Invitaciones con perfil completado por la persona
+
+Crear una invitación nueva requiere únicamente `correo`, `tipo_cuenta` (`admin` o `empleado`) y `fecha_ingreso` válida. El servidor fija 12 días iniciales e ignora datos personales y saldos enviados por el emisor. `profile_completion_required=1` identifica el flujo nuevo; la migración aditiva conserva 0 para enlaces anteriores.
+
+La página pública verifica el enlace mediante POST `/auth/invitations/inspect`; solo un token válido, no vencido y vinculado al rol y sesión del patrocinador puede obtener los datos asignados. Correo, rol, ingreso y vacaciones son de solo lectura. La persona completa nombre, apellidos, teléfono y dirección y establece su contraseña. POST `/accept` valida y crea el usuario con esos datos dentro de la transacción que consume la invitación. El correo queda verificado por la posesión del enlace. No se asignan contraseñas desde administración.
+
+Enlaces anteriores y recuperación de cuentas existentes conservan su comportamiento y sus saldos. Reenviar un enlace del flujo nuevo mantiene la exigencia de completar el perfil e invalida el enlace anterior. Los errores no se interpretan como éxito; el formulario conserva sus datos y solo se cierra al confirmar la operación.
+
+Referencias: se mantiene el diseño existente SMART RH (tokens de tema, controles, modal y confirmaciones) y las pautas de formularios accesibles: etiquetas, autocompletado, envío por teclado, campos bloqueados durante el guardado y estados anunciados. No se añaden componentes gráficos ajenos al portal. La investigación externa no estuvo disponible; se usó el producto existente como referencia principal.
+
+Validación: pruebas unitarias del servidor, pruebas React del formulario mínimo y la activación, TypeScript, build y pruebas del despliegue. La prueba SQL real en tablas desechables cubre la creación de empleado y administrador, perfil obligatorio, asignación de 12 días, inmunidad a cambios de campos asignados, inspección del enlace, reenvío, uso único y cuentas existentes sin duplicados. No envía SMTP real ni crea usuarios reales. La validación autenticada final se realiza después del despliegue.

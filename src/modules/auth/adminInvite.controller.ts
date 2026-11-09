@@ -1,3 +1,4 @@
+import { inspectAdminInvite } from './adminInvite.service.js';
 import { resendExistingAccountInvitation } from './adminInvite.service.js';
 import { getPendingInvitations, resendAdminInvitation } from './adminInvite.service.js';
 import type {
@@ -81,5 +82,12 @@ export async function resendInvitationController(req: AuthRequest, res: Response
 
 export async function resendExistingAccountController(req: AuthRequest, res: Response, next: NextFunction) {
   try { res.status(201).json({ ok: true, ...await resendExistingAccountInvitation(req.auth?.userId, req.params.userId, req.ip) }); }
+  catch (error) { next(error); }
+}
+
+export async function inspectInvitationController(req: AuthRequest, res: Response, next: NextFunction) {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  try { res.json({ ok: true, ...await inspectAdminInvite(req.body) }); }
   catch (error) { next(error); }
 }

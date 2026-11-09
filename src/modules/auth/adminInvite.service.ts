@@ -1,3 +1,5 @@
+import { INITIAL_INVITATION_VACATION_DAYS, validateInvitationEntryDate, validateInvitationProfile } from './adminInvite.profile.js';
+import { inspectAdminInvitation } from './adminInvite.repository.js';
 import { findPendingInvitation, listPendingInvitations } from './adminInvite.repository.js';
 import {
   AppError,
@@ -46,6 +48,7 @@ type SponsorUser = {
 
 
 export type AdminInviteDependencies = {
+  inspectInvitation: typeof inspectAdminInvitation;
   findPendingInvitation: typeof findPendingInvitation;
   listPendingInvitations: typeof listPendingInvitations;
   findSponsor:
@@ -83,6 +86,7 @@ export type AdminInviteDependencies = {
 
 const defaultDependencies:
 AdminInviteDependencies = {
+  inspectInvitation: inspectAdminInvitation,
   findExistingAccount: findUserById,
   findPendingInvitation,
   listPendingInvitations,
@@ -395,7 +399,8 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
     payload: any,
     requestIp?: unknown,
     replacesInvitationId?: string,
-    existingAccount?: { id: number; session_version: number }
+    existingAccount?: { id: number; session_version: number },
+    legacyProfile = false
   ) {
     const sponsorUserId =
       Number(
@@ -435,47 +440,18 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
         payload?.correo
       );
 
-    const inviteRole =
-      validateInviteRole(
-        payload?.tipo_cuenta
-      );
+    if (!['admin', 'empleado'].includes(payload?.tipo_cuenta)) throw new AppError('Selecciona el rol de la invitación.', 400);
+    const inviteRole = validateInviteRole(payload.tipo_cuenta);
 
-    const nombre =
-      requiredText(
-        payload?.nombre,
-        'Nombre',
-        100
-      );
-
-    const apellido =
-      requiredText(
-        payload?.apellido,
-        'Apellido',
-        100
-      );
-
-    const telefono =
-      optionalText(
-        payload?.telefono,
-        30
-      );
-
-    const direccion =
-      optionalText(
-        payload?.direccion,
-        500
-      );
-
-    const fechaIngreso =
-      validateDate(
-        payload?.fecha_ingreso
-      );
-
-    const diasVacaciones =
-      validateVacationDays(
-        payload
-          ?.dias_vacaciones_disponibles
-      );
+    const profileCompletionRequired = !existingAccount && !legacyProfile;
+    const nombre = profileCompletionRequired ? '' : requiredText(payload?.nombre, 'Nombre', 100);
+    const apellido = profileCompletionRequired ? '' : requiredText(payload?.apellido, 'Apellido', 100);
+    const telefono = profileCompletionRequired ? null : optionalText(payload?.telefono, 30);
+    const direccion = profileCompletionRequired ? null : optionalText(payload?.direccion, 500);
+    const fechaIngreso = profileCompletionRequired
+      ? validateInvitationEntryDate(payload?.fecha_ingreso) : validateDate(payload?.fecha_ingreso);
+    const diasVacaciones = profileCompletionRequired
+      ? INITIAL_INVITATION_VACATION_DAYS : validateVacationDays(payload?.dias_vacaciones_disponibles);
 
     const invitationId =
       deps.generateInvitationId();
@@ -528,6 +504,7 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
           ADMIN_INVITE_EXPIRES_MINUTES,
         accountType: inviteRole,
         replacesInvitationId,
+        profileCompletionRequired,
         existingUserId: existingAccount?.id,
         existingUserSessionVersion: existingAccount?.session_version,
       });
@@ -668,7 +645,7 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
       telefono: original.telefono, direccion: original.direccion,
       fecha_ingreso: original.fecha_ingreso instanceof Date ? original.fecha_ingreso.toISOString().slice(0, 10) : original.fecha_ingreso ? String(original.fecha_ingreso).slice(0, 10) : null,
       dias_vacaciones_disponibles: original.dias_vacaciones_disponibles, tipo_cuenta: role,
-    }, requestIp, id);
+    }, requestIp, id, undefined, !Number(original.profile_completion_required));
   }
 
   async function acceptInvitation(
@@ -721,18 +698,18 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
         inviteRole
       );
 
+    const profile = payload?.perfil == null ? undefined : validateInvitationProfile(payload.perfil);
+
     const passwordHash =
       await deps.hashPassword(
         password
       );
 
-    const result =
-      await deps.acceptInvitation(
-        invitationId,
-        tokenHmac,
-        passwordHash,
-        inviteRole
-      );
+    const result = profile
+      ? await deps.acceptInvitation(invitationId, tokenHmac, passwordHash, inviteRole, profile)
+      : await deps.acceptInvitation(invitationId, tokenHmac, passwordHash, inviteRole);
+
+    if (result.status === 'profile_required') throw new AppError('Completa tu nombre, apellidos, teléfono y dirección para activar tu cuenta.', 400);
 
     if (
       result.status ===
@@ -766,8 +743,19 @@ export function buildAdminInviteService(overrides: Partial<AdminInviteDependenci
   }
 
 
+  async function inspectInvitation(payload: any) {
+    const id = String(payload?.invitationId || '').trim().toLowerCase();
+    const token = String(payload?.token || '').trim().toLowerCase();
+    if (!isValidAdminInviteId(id) || !isValidAdminInviteToken(token)) throw new AppError('Invitación inválida o expirada', 400);
+    const role = validateInviteRole(payload?.tipoCuenta);
+    const result = await deps.inspectInvitation(id, deps.createTokenHmac(id, token, role), role);
+    if (!result) throw new AppError('Invitación inválida o expirada', 400);
+    return { invitation: result };
+  }
+
   return {
     requestInvitation,
+    inspectInvitation,
     acceptInvitation,
     pendingInvitations,
     resendExistingAccount,
@@ -791,3 +779,5 @@ export const getPendingInvitations = defaultService.pendingInvitations;
 export const resendAdminInvitation = defaultService.resendInvitation;
 
 export const resendExistingAccountInvitation = defaultService.resendExistingAccount;
+
+export const inspectAdminInvite = defaultService.inspectInvitation;

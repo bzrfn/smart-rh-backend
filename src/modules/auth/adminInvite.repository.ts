@@ -1,3 +1,4 @@
+import { INITIAL_INVITATION_VACATION_DAYS, validateInvitationProfile, type InvitationProfile } from './adminInvite.profile.js';
 import {
   createHash,
 } from 'node:crypto';
@@ -37,6 +38,7 @@ export type CreateAdminInvitationInput = {
   expiresInMinutes: number;
   accountType?: 'admin' | 'empleado';
   replacesInvitationId?: string;
+  profileCompletionRequired?: boolean;
   existingUserId?: number;
   existingUserSessionVersion?: number;
 };
@@ -72,6 +74,7 @@ export type AcceptAdminInvitationResult =
         sessionVersion: number;
       };
     }
+  | { status: 'profile_required' }
   | {
       status: 'invalid';
     }
@@ -114,6 +117,8 @@ type InvitationRow = {
   accepted_user_id: number | null;
 
   revoked_at: Date | null;
+  account_type?: 'admin' | 'empleado' | null;
+  profile_completion_required?: number;
   existing_user_id?: number | null;
   existing_user_session_version?: number | null;
 };
@@ -597,7 +602,7 @@ export async function createAdminInvitation(
 
           expires_at,
           account_type,
-          existing_user_id, existing_user_session_version
+          existing_user_id, existing_user_session_version, profile_completion_required
         )
         VALUES (
           ?,
@@ -607,7 +612,7 @@ export async function createAdminInvitation(
           ?, ?, ?,
           ?,
           ?,
-          ?, ?, ?, ?
+          ?, ?, ?, ?, ?
         )
       `,
       [
@@ -648,7 +653,7 @@ export async function createAdminInvitation(
 
         expiresAt,
         input.accountType || null,
-        input.existingUserId || null, input.existingUserSessionVersion ?? null,
+        input.existingUserId || null, input.existingUserSessionVersion ?? null, input.profileCompletionRequired ? 1 : 0,
       ]
     );
 
@@ -752,7 +757,8 @@ export async function acceptAdminInvitation(
   invitationIdInput: string,
   candidateTokenHmacInput: string,
   passwordHashInput: string,
-  inviteRoleInput: 'admin' | 'empleado' = 'admin'
+  inviteRoleInput: 'admin' | 'empleado' = 'admin',
+  profileInput?: InvitationProfile
 ): Promise<AcceptAdminInvitationResult> {
   const invitationId =
     normalizeHex64(
@@ -875,7 +881,7 @@ export async function acceptAdminInvitation(
             accepted_at,
             accepted_user_id,
 
-            revoked_at, existing_user_id, existing_user_session_version
+            revoked_at, existing_user_id, existing_user_session_version, account_type, profile_completion_required
 
           FROM
             admin_invitations
@@ -927,6 +933,11 @@ export async function acceptAdminInvitation(
           'invalid',
       };
     }
+
+    if (invitation.account_type && invitation.account_type !== inviteRole) { await conn.commit(); return { status: 'invalid' }; }
+    const requiresProfile = Number(invitation.profile_completion_required) === 1;
+    if (requiresProfile && !profileInput) { await conn.commit(); return { status: 'profile_required' }; }
+    const profile = profileInput ? validateInvitationProfile(profileInput) : undefined;
 
     const sponsor =
       await lockSponsor(
@@ -1124,18 +1135,18 @@ export async function acceptAdminInvitation(
           )
         `,
         [
-          invitation.nombre,
-          invitation.apellido,
+          profile?.nombre ?? invitation.nombre,
+          profile?.apellido ?? invitation.apellido,
           invitation.invite_email,
           passwordHash,
 
           invitedRoleId,
 
-          invitation.telefono,
-          invitation.direccion,
+          profile?.telefono ?? invitation.telefono,
+          profile?.direccion ?? invitation.direccion,
           invitation.fecha_ingreso,
 
-          invitation.dias_vacaciones_disponibles,
+          requiresProfile ? INITIAL_INVITATION_VACATION_DAYS : invitation.dias_vacaciones_disponibles,
         ]
       );
 
@@ -1301,6 +1312,7 @@ export async function acceptAdminInvitation(
 }
 
 export type PendingInvitation = {
+  profile_completion_required: number;
   invitation_id: string; invite_email: string; nombre: string; apellido: string;
   account_type: 'admin' | 'empleado' | null;
   telefono: string | null; direccion: string | null; fecha_ingreso: Date | string | null;
@@ -1310,7 +1322,7 @@ export type PendingInvitation = {
 export async function listPendingInvitations(): Promise<PendingInvitation[]> {
   const [rows] = await pool.query(`
     SELECT i.invitation_id, i.invite_email, i.nombre, i.apellido, i.account_type,
-      i.telefono, i.direccion, i.fecha_ingreso, i.dias_vacaciones_disponibles, i.created_at, i.expires_at, i.delivery_failed_at
+      i.telefono, i.direccion, i.fecha_ingreso, i.profile_completion_required, i.dias_vacaciones_disponibles, i.created_at, i.expires_at, i.delivery_failed_at
     FROM admin_invitations i
     WHERE i.accepted_at IS NULL AND (i.revoked_at IS NULL OR i.delivery_failed_at IS NOT NULL)
       AND NOT EXISTS (SELECT 1 FROM usuarios u WHERE u.correo = i.invite_email)
@@ -1325,8 +1337,38 @@ export async function findPendingInvitation(id: string): Promise<PendingInvitati
   if (!HEX_64.test(id)) return null;
   const [rows] = await pool.query(`
     SELECT invitation_id, invite_email, nombre, apellido, account_type,
-      telefono, direccion, fecha_ingreso, dias_vacaciones_disponibles, created_at, expires_at, delivery_failed_at
+      telefono, direccion, fecha_ingreso, profile_completion_required, dias_vacaciones_disponibles, created_at, expires_at, delivery_failed_at
     FROM admin_invitations WHERE invitation_id = ? AND accepted_at IS NULL AND (revoked_at IS NULL OR delivery_failed_at IS NOT NULL) LIMIT 1
   `, [id]);
   return (rows as PendingInvitation[])[0] || null;
+}
+
+export type InvitationPreview = {
+  correo: string; tipoCuenta: 'admin' | 'empleado'; fechaIngreso: string | null;
+  diasVacaciones: number; requiresProfileCompletion: boolean; existingAccount: boolean;
+  perfil: { nombre: string; apellido: string; telefono: string; direccion: string };
+};
+export async function inspectAdminInvitation(id: string, candidateHmac: string, role: 'admin' | 'empleado'): Promise<InvitationPreview | null> {
+  const [rows] = await pool.query(`SELECT i.*, s.activo AS sponsor_active, s.email_verificado AS sponsor_verified,
+    s.session_version AS current_sponsor_version, r.nombre AS sponsor_role,
+    u.id AS target_id, u.correo AS target_email, u.activo AS target_active, u.session_version AS target_version,
+    ur.nombre AS target_role
+    FROM admin_invitations i JOIN usuarios s ON s.id=i.sponsor_admin_id JOIN roles r ON r.id=s.rol_id
+    LEFT JOIN usuarios u ON u.id=i.existing_user_id LEFT JOIN roles ur ON ur.id=u.rol_id
+    WHERE i.invitation_id=? LIMIT 1`, [id]);
+  const item = (rows as any[])[0];
+  if (!item || item.accepted_at || item.revoked_at || new Date(item.expires_at).getTime() <= Date.now() ||
+      !safeEqualAdminInviteHmac(item.token_hmac, candidateHmac) || (item.account_type && item.account_type !== role) ||
+      Number(item.sponsor_active)!==1 || Number(item.sponsor_verified)!==1 || normalizeEmail(item.sponsor_role)!=='admin' ||
+      Number(item.current_sponsor_version)!==Number(item.sponsor_session_version)) return null;
+  if (item.existing_user_id && (Number(item.target_id)!==Number(item.existing_user_id) || Number(item.target_active)!==1 ||
+      normalizeEmail(item.target_email)!==normalizeEmail(item.invite_email) || normalizeEmail(item.target_role)!==role ||
+      Number(item.target_version)!==Number(item.existing_user_session_version))) return null;
+  const requiresProfileCompletion=Number(item.profile_completion_required)===1;
+  const value: unknown=item.fecha_ingreso;
+  return { correo:item.invite_email, tipoCuenta:role,
+    fechaIngreso:value instanceof Date ? value.toISOString().slice(0,10) : value ? String(value).slice(0,10) : null,
+    diasVacaciones:requiresProfileCompletion?INITIAL_INVITATION_VACATION_DAYS:Number(item.dias_vacaciones_disponibles),
+    requiresProfileCompletion, existingAccount:Boolean(item.existing_user_id),
+    perfil:{nombre:item.nombre||'',apellido:item.apellido||'',telefono:item.telefono||'',direccion:item.direccion||''} };
 }
