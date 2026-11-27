@@ -1,0 +1,76 @@
+name: CI Backend
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      sql:
+        image: mariadb:11.4
+        env:
+          MARIADB_RANDOM_ROOT_PASSWORD: 'yes'
+          MARIADB_DATABASE: smart_rh_ci
+          MARIADB_USER: rh_ci
+          MARIADB_PASSWORD: solo-para-ci
+        ports: ['3306/tcp']
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=3s --health-retries=20
+      mongo:
+        image: mongo:8.0
+        ports: ['27017/tcp']
+        options: --health-cmd="mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok ? 0:1)'" --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Pruebas unitarias, de integración y de sistema
+        run: npm test -- --json --outputFile=jest-results.json
+      - run: npm run build
+      - name: Probar el servidor compilado con ambas bases temporales
+        env:
+          CI_SQL_PORT: ${{ job.services.sql.ports[3306] }}
+          CI_MONGO_PORT: ${{ job.services.mongo.ports[27017] }}
+        run: python3 ops/devops/readiness_ci.py
+      - name: Conservar resultados
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: backend-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            jest-results.json
+            readiness-ci.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Preparar el backend validado para entrega
+        if: github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p entrega-ci
+          printf '%s\n' "$GITHUB_SHA" > entrega-ci/REVISION
+          tar -czf "entrega-ci/SMART_RH_backend_$GITHUB_SHA.tar.gz" dist db/migrations package.json package-lock.json -C entrega-ci REVISION
+          cd entrega-ci
+          sha256sum "SMART_RH_backend_$GITHUB_SHA.tar.gz" > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - name: Entregar compilación y migraciones versionadas
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: candidato-backend-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            entrega-ci/*.tar.gz
+            entrega-ci/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
