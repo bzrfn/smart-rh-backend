@@ -38,6 +38,19 @@ def sanitize(data):
     return [{k: finding.get(k) for k in ('RuleID', 'File', 'StartLine', 'Commit')} for finding in data]
 
 
+def exclude_reviewed(data, catalog):
+    if not isinstance(catalog, dict) or catalog.get('schema') != 1 or not isinstance(catalog.get('entries'), list):
+        raise ValueError('Registro de revisión inválido')
+    keys = ('RuleID', 'File', 'StartLine', 'Commit')
+    approved = set()
+    for entry in catalog['entries']:
+        if not entry.get('reason') or len(entry.get('match_sha256', '')) != 64 or not entry.get('Commit'):
+            raise ValueError('Falta la justificación o la identidad de una revisión')
+        approved.add(tuple(entry.get(k) for k in keys) + (entry['match_sha256'],))
+    remaining = [x for x in data if tuple(x.get(k) for k in keys) + (hashlib.sha256(x.get('Match', '').encode()).hexdigest(),) not in approved]
+    return remaining, len(data) - len(remaining)
+
+
 def execute(root, output, mode):
     root = root.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -63,10 +76,15 @@ def execute(root, output, mode):
             proc = subprocess.run(command, capture_output=True, timeout=330)
             if proc.returncode not in (0, 10) or not raw.is_file():
                 raise ValueError('La herramienta no completó el análisis')
-            findings = sanitize(json.loads(raw.read_text()))
-            if (proc.returncode == 0) != (len(findings) == 0):
+            raw_data = json.loads(raw.read_text())
+            sanitize(raw_data)
+            if (proc.returncode == 0) != (len(raw_data) == 0):
                 raise ValueError('Resultado de secretos inconsistente')
-            result.update(status='blocked' if findings else 'passed', count=len(findings), findings=findings)
+            catalog_path = Path(__file__).with_name('falsos_positivos_secretos.json')
+            remaining, reviewed = exclude_reviewed(raw_data, json.loads(catalog_path.read_text())) if catalog_path.is_file() else (raw_data, 0)
+            findings = sanitize(remaining)
+            result.update(status='blocked' if findings else 'passed', count=len(findings), findings=findings,
+                          reviewed_false_positives=reviewed, raw_count=len(raw_data))
     finally:
         (output / 'secretos.json').write_text(json.dumps(result, indent=2) + '\n')
     print('SECRETOS=' + result['status'].upper())

@@ -128,4 +128,26 @@ class Evidence(unittest.TestCase):
         with self.assertRaises(ValueError): evidence.produce(self.root, self.out)
 
 
+
+class ReviewedSecrets(unittest.TestCase):
+    def setUp(self):
+        self.item = {'RuleID': 'generic-api-key', 'File': 'ops/example.py', 'StartLine': 4, 'Commit': '1' * 40, 'Match': 'symbolic assignment'}
+        self.entry = {k:self.item[k] for k in ('RuleID','File','StartLine','Commit')}
+        self.entry.update(match_sha256=scanner.hashlib.sha256(self.item['Match'].encode()).hexdigest(), reason='Asignación simbólica revisada')
+        self.catalog = {'schema': 1, 'entries': [self.entry]}
+    def test_exact_reviewed_bytes_removed(self):
+        self.assertEqual(scanner.exclude_reviewed([self.item],self.catalog),([],1))
+    def test_other_commit_still_reported(self):
+        self.item['Commit']='2'*40
+        self.assertEqual(scanner.exclude_reviewed([self.item],self.catalog)[1],0)
+    def test_other_bytes_still_reported(self):
+        self.item['Match']='a different value'
+        self.assertEqual(scanner.exclude_reviewed([self.item],self.catalog)[1],0)
+    def test_other_finding_remains(self):
+        other={**self.item,'StartLine':6}
+        self.assertEqual(scanner.exclude_reviewed([self.item,other],self.catalog),([other],1))
+    def test_review_without_reason_rejected(self):
+        self.entry.pop('reason')
+        with self.assertRaises(ValueError):scanner.exclude_reviewed([self.item],self.catalog)
+
 if __name__ == '__main__': unittest.main()
