@@ -1,5 +1,6 @@
 name: CI Backend
 on:
+  workflow_call:
   pull_request:
     branches: [main]
   push:
@@ -11,7 +12,10 @@ concurrency:
   group: backend-ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  devops-calidad:
+    uses: ./.github/workflows/devops-calidad.yml
   backend-ci:
+    needs: devops-calidad
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -42,8 +46,8 @@ jobs:
       - run: npm run build
       - name: Probar el servidor compilado con ambas bases temporales
         env:
-          CI_SQL_PORT: ${{ job.services.sql.ports[3306] }}
-          CI_MONGO_PORT: ${{ job.services.mongo.ports[27017] }}
+          CI_SQL_PORT: ${{ job.services.sql.ports['3306'] }}
+          CI_MONGO_PORT: ${{ job.services.mongo.ports['27017'] }}
         run: python3 ops/devops/readiness_ci.py
       - name: Conservar resultados
         if: always()

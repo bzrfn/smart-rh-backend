@@ -1,0 +1,13 @@
+name: Revision semanal DevOps
+on:
+  schedule:
+    - cron: '31 12 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: revision-semanal-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  devops-calidad:
+    uses: ./.github/workflows/devops-calidad.yml
